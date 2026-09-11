@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/supabase/auth/internal/conf"
+	"github.com/supabase/auth/internal/observability"
 	"github.com/supabase/auth/internal/storage"
 	"github.com/supabase/auth/internal/tenant"
 )
@@ -84,6 +86,37 @@ func TestCrossTenantIsolation(t *testing.T) {
 	require.NoError(t, tdb.Transaction(func(tx *storage.Connection) error {
 		return tx.RawQuery("delete from users where email = 'probe@example.com'").Exec()
 	}))
+
+	// (4) call the Signup handler directly, through the same logger and
+	// external-host middlewares the router applies, so the underlying error
+	// (or panic) is visible instead of an opaque 500.
+	func() {
+		defer func() {
+			if rvr := recover(); rvr != nil {
+				t.Fatalf("direct Signup panicked: %v\n%s", rvr, debug.Stack())
+			}
+		}()
+		req := httptest.NewRequest(http.MethodPost, "http://t-one.local/signup",
+			strings.NewReader(`{"email":"direct@example.com","password":"correct-horse-battery-staple"}`))
+		req.Host = "t-one.local"
+		req.Header.Set("Content-Type", "application/json")
+		req = req.WithContext(tenant.WithConfig(req.Context(), tcfg))
+		rec := httptest.NewRecorder()
+
+		var herr error
+		logged := observability.NewStructuredLogger(logrus.StandardLogger(), config)(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ctx2, e := api.isValidExternalHost(w, r)
+				if e != nil {
+					herr = fmt.Errorf("isValidExternalHost: %w", e)
+					return
+				}
+				herr = api.Signup(w, r.WithContext(ctx2))
+			}))
+		logged.ServeHTTP(rec, req)
+		require.NoError(t, herr, "direct Signup call (status %d, body %s)", rec.Code, rec.Body.String())
+		require.Equal(t, http.StatusOK, rec.Code, "direct Signup body: %s", rec.Body.String())
+	}()
 
 	const email = "alice@example.com"
 	const password = "correct-horse-battery-staple"
