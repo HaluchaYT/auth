@@ -39,16 +39,25 @@ func TestCrossTenantIsolation(t *testing.T) {
 		t.Skip("set GOTRUE_MULTITENANT_TEST=1 to run the multitenant integration test")
 	}
 
+	// t-three is registered but NOT pre-provisioned: it proves that with
+	// AutoProvision the service creates the schema and runs the upstream
+	// migrations itself on first use (dashboard-only tenant registration).
+	storage.SetTenantMigrationsPath("../../migrations")
+
 	var provisionErr error
 	api, config, err := setupAPIForTestWithCallback(func(c *conf.GlobalConfiguration, conn *storage.Connection) {
 		if c != nil {
 			c.MultiTenant.Enabled = true
 			c.MultiTenant.Strict = false
+			c.MultiTenant.AutoProvision = true
 			c.Mailer.Autoconfirm = true
 			c.External.Email.Enabled = true
 		}
 		if conn != nil {
 			provisionErr = provisionTestTenants(conn, "t_one", "t_two")
+			if provisionErr == nil {
+				provisionErr = registerUnprovisionedTenant(conn, "t_three")
+			}
 		}
 	})
 	require.NoError(t, err)
@@ -147,6 +156,20 @@ func TestCrossTenantIsolation(t *testing.T) {
 	rec := do(t, api, "nobody.local", http.MethodGet, "/health", nil, "")
 	require.Equal(t, http.StatusNotFound, rec.Code)
 
+	// Auto-provisioning: t-three had no schema at all. Its first signup
+	// must create t_three_auth, migrate it, and succeed; its token must be
+	// just as isolated as the others.
+	tok3 := signupAndToken(t, api, "t-three.local", email, password)
+	require.NotEmpty(t, tok3)
+	require.Equal(t, http.StatusOK, getUserStatus(t, api, "t-three.local", tok3))
+	require.Equal(t, http.StatusForbidden, getUserStatus(t, api, "t-one.local", tok3))
+	var n3 int
+	require.NoError(t, api.db.RawQuery(`select count(*) from "t_three_auth".users where email = ?`, email).First(&n3))
+	require.Equal(t, 1, n3, "auto-provisioned schema should hold exactly one user")
+	var mig3 int
+	require.NoError(t, api.db.RawQuery(`select count(*) from "t_three_auth".schema_migrations`).First(&mig3))
+	require.Greater(t, mig3, 10, "migrator bookkeeping should live in the tenant schema")
+
 	// Row-level proof: each tenant schema holds exactly one alice.
 	for _, schema := range []string{"t_one_auth", "t_two_auth"} {
 		var n int
@@ -223,6 +246,24 @@ func provisionTestTenants(conn *storage.Connection, slugs ...string) error {
 		}
 	}
 	return nil
+}
+
+// registerUnprovisionedTenant registers a tenant whose schema does not
+// exist yet (dropping any leftover from a previous local run) so the
+// auto-provision path is exercised.
+func registerUnprovisionedTenant(conn *storage.Connection, slug string) error {
+	schema := slug + "_auth"
+	if err := conn.RawQuery(fmt.Sprintf(`drop schema if exists %q cascade`, schema)).Exec(); err != nil {
+		return err
+	}
+	secret, err := tenant.GenerateJWTSecret()
+	if err != nil {
+		return err
+	}
+	dnsSlug := strings.ReplaceAll(slug, "_", "-")
+	q := `insert into _control._tenants (slug, schema_name, jwt_secret, jwt_issuer, site_url)
+	      values (?, ?, ?, ?, ?) on conflict (slug) do update set schema_name = excluded.schema_name`
+	return conn.RawQuery(q, dnsSlug, schema, secret, "https://"+dnsSlug+".local", "https://"+dnsSlug+".local").Exec()
 }
 
 func do(t *testing.T, api *API, host, method, path string, body any, bearer string) *httptest.ResponseRecorder {

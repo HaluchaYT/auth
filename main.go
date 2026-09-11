@@ -11,6 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/supabase/auth/cmd"
 	"github.com/supabase/auth/internal/observability"
+	"github.com/supabase/auth/internal/storage"
 )
 
 //go:embed migrations/*
@@ -22,6 +23,7 @@ func init() {
 
 func main() {
 	cmd.EmbeddedMigrations = embeddedMigrations
+	storage.SetTenantMigrations(embeddedMigrations) // multi-tenant auto-provisioning
 
 	execCtx, execCancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT)
 	defer execCancel()

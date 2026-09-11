@@ -59,6 +59,22 @@ func (p *tenantPoolCache) get(ctx context.Context, base *conf.GlobalConfiguratio
 	if err != nil {
 		return nil, fmt.Errorf("multitenant: dialing pool for schema %q: %w", tc.Schema, err)
 	}
+
+	// First use of this tenant in this process: make sure its schema has
+	// been migrated, provisioning it if the operator opted in.
+	ok, err = tenantSchemaProvisioned(conn, tc.Schema)
+	if err != nil {
+		return nil, fmt.Errorf("multitenant: checking schema %q: %w", tc.Schema, err)
+	}
+	if !ok {
+		if !base.MultiTenant.AutoProvision {
+			logrus.WithFields(logrus.Fields{"component": "multitenant", "tenant": tc.Slug, "schema": tc.Schema}).
+				Warn("tenant schema has no auth tables; run the migrations for this namespace or enable GOTRUE_MULTITENANT_AUTO_PROVISION")
+		} else if err := provisionTenantSchema(base, conn, tc.Schema); err != nil {
+			return nil, err
+		}
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"component": "multitenant",
 		"tenant":    tc.Slug,

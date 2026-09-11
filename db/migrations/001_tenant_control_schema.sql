@@ -39,6 +39,38 @@ create table if not exists _control._tenants (
 
 create index if not exists _tenants_schema_idx on _control._tenants (schema_name);
 
+-- ------------------------------------------------------------
+-- Dashboard-friendly defaults: registering a tenant from Supabase
+-- Studio's Table Editor ("Insert row") only needs `slug` and `site_url`.
+--   jwt_secret   → generated 256-bit key (base64url)
+--   schema_name  → '<slug with dashes→underscores>_auth'
+--   jwt_issuer   → site_url
+-- ------------------------------------------------------------
+create extension if not exists pgcrypto;
+
+alter table _control._tenants
+  alter column jwt_secret set default translate(encode(gen_random_bytes(32), 'base64'), '+/=', '-_'),
+  alter column schema_name drop not null,
+  alter column jwt_issuer  drop not null;
+
+create or replace function _control._tenants_defaults()
+returns trigger language plpgsql as $$
+begin
+  if new.schema_name is null or new.schema_name = '' then
+    new.schema_name := replace(new.slug, '-', '_') || '_auth';
+  end if;
+  if new.jwt_issuer is null or new.jwt_issuer = '' then
+    new.jwt_issuer := new.site_url;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists _tenants_defaults on _control._tenants;
+create trigger _tenants_defaults
+before insert on _control._tenants
+for each row execute function _control._tenants_defaults();
+
 -- Auto-update updated_at
 create or replace function _control._set_updated_at()
 returns trigger language plpgsql as $$

@@ -96,6 +96,7 @@ spots to keep rebases cheap.
 | `GOTRUE_MULTITENANT_CACHE_TTL` | `5m` | Registry row cache lifetime |
 | `GOTRUE_MULTITENANT_POOL_SIZE` | `4` | Max open connections per tenant pool |
 | `GOTRUE_MULTITENANT_TRUST_FORWARDED_HOST` | `false` | Resolve the tenant from `X-Forwarded-Host` (proxy-set) instead of `Host` — for Kong/Traefik chains that rewrite the upstream Host |
+| `GOTRUE_MULTITENANT_AUTO_PROVISION` | `false` | On a tenant's first request, create its schema and run the upstream migrations against it — registering a tenant becomes a single row insert |
 
 All other `GOTRUE_*` settings act as per-tenant defaults.
 
@@ -110,17 +111,26 @@ All other `GOTRUE_*` settings act as per-tenant defaults.
    ```
    psql "$DATABASE_URL" -f db/migrations/001_tenant_control_schema.sql
    ```
-3. **Provision each tenant's schema with the upstream migrations** — they
-   are templated on the namespace, so this yields a complete, correct copy
-   (foreign keys, triggers, functions, indexes, and the exact constraint
-   names the service's upserts reference):
-   ```
-   GOTRUE_DB_NAMESPACE=dennys_auth ./auth migrate
-   ```
+3. **Provision each tenant's schema** — two ways, same result (the upstream
+   migrations are templated on the namespace, so the copy is complete and
+   correct: foreign keys, triggers, functions, indexes and the exact
+   constraint names the service's upserts reference):
+   - **Automatic (recommended):** set `GOTRUE_MULTITENANT_AUTO_PROVISION=true`
+     and skip this step — the service creates `<slug>_auth` and migrates it
+     on the tenant's first request.
+   - **Manual:** create the schema, then run the migrator with the namespace
+     and a DSN whose `search_path` points at it (a `-c` config file
+     overrides process env, so write a per-tenant env file):
+     ```
+     DB_NAMESPACE=dennys_auth DATABASE_URL="…/postgres?search_path=dennys_auth" ./auth migrate
+     ```
    Never clone tables with `CREATE TABLE … (LIKE … INCLUDING ALL)` — it
    drops foreign keys and renames constraints, which breaks e.g. the
    `mfa_amr_claims` upsert during sign-in.
-4. **Register the tenant**:
+4. **Register the tenant** — from Supabase Studio's Table Editor
+   (`_control` → `_tenants` → *Insert row*: only `slug` and `site_url` are
+   required; the JWT secret, `schema_name` and `jwt_issuer` default) or in
+   SQL:
    ```sql
    insert into _control._tenants
      (slug, schema_name, jwt_secret, jwt_issuer, site_url, redirect_urls,

@@ -482,6 +482,12 @@ type MultiTenantConfiguration struct {
 	// auth container is not reachable except through that proxy.
 	// GOTRUE_MULTITENANT_TRUST_FORWARDED_HOST.
 	TrustForwardedHost bool `json:"trust_forwarded_host" split_words:"true" default:"false"`
+
+	// AutoProvision creates a tenant's schema and runs the upstream
+	// migrations against it on the tenant's first request, so registering a
+	// tenant is just a row in _control._tenants (e.g. from Supabase Studio's
+	// Table Editor). GOTRUE_MULTITENANT_AUTO_PROVISION.
+	AutoProvision bool `json:"auto_provision" split_words:"true" default:"false"`
 }
 
 // GlobalConfiguration holds all the configuration that applies to all instances.
