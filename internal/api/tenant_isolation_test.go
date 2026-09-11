@@ -166,7 +166,10 @@ var errTenantSchemaMissing = errors.New("tenant schema not provisioned")
 // tenants. The tenant schemas themselves must already be migrated:
 //
 //	psql "$PG_SUPERUSER_URL" -c 'create schema if not exists t_one_auth authorization supabase_auth_admin'
-//	DB_NAMESPACE=t_one_auth DATABASE_URL="$DATABASE_URL?search_path=t_one_auth" go run main.go migrate -c hack/test.env
+//	sed -e 's|^DB_NAMESPACE=.*|DB_NAMESPACE="t_one_auth"|' \
+//	    -e 's|^DATABASE_URL=.*|DATABASE_URL="postgres://supabase_auth_admin:root@localhost:5432/postgres?search_path=t_one_auth"|' \
+//	    hack/test.env > /tmp/tenant-t_one_auth.env
+//	go run main.go migrate -c /tmp/tenant-t_one_auth.env
 //
 // (and the same for t_two_auth) — see .github/workflows/tenant.yml.
 func provisionTestTenants(conn *storage.Connection, slugs ...string) error {

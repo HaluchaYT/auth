@@ -177,8 +177,11 @@ does it) and per-tenant mailers/overlays rebuild automatically.
   for s in t_one_auth t_two_auth; do
     psql postgresql://postgres:root@localhost:5432/postgres \
       -c "create schema if not exists $s authorization supabase_auth_admin"
-    DB_NAMESPACE=$s DATABASE_URL="postgres://supabase_auth_admin:root@localhost:5432/postgres?search_path=$s" \
-      go run main.go migrate -c hack/test.env
+    # a -c config file overrides process env, so derive a per-tenant file
+    sed -e "s|^DB_NAMESPACE=.*|DB_NAMESPACE=\"$s\"|" \
+        -e "s|^DATABASE_URL=.*|DATABASE_URL=\"postgres://supabase_auth_admin:root@localhost:5432/postgres?search_path=$s\"|" \
+        hack/test.env > /tmp/tenant-$s.env
+    go run main.go migrate -c /tmp/tenant-$s.env
   done
   GOTRUE_MULTITENANT_TEST=1 go test ./internal/api -run TestCrossTenantIsolation -v
   ```

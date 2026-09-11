@@ -88,6 +88,8 @@ jobs:
         # Create each tenant schema, then run the upstream migrations with
         # the namespace AND the DSN search_path pointed at it, so tables and
         # the migrator's own schema_migrations land in the tenant schema.
+        # A config file passed with -c overrides process env, so derive a
+        # per-tenant env file from hack/test.env instead of exporting vars.
         env:
           SUPER_URL: postgresql://postgres:root@localhost:5432/postgres
           AUTH_URL: postgres://supabase_auth_admin:root@localhost:5432/postgres
@@ -95,9 +97,11 @@ jobs:
           set -euo pipefail
           for s in t_one_auth t_two_auth; do
             psql "$SUPER_URL" -c "create schema if not exists $s authorization supabase_auth_admin"
-            DB_NAMESPACE="$s" GOTRUE_DB_NAMESPACE="$s" \
-            DATABASE_URL="${AUTH_URL}?search_path=${s}" GOTRUE_DB_DATABASE_URL="${AUTH_URL}?search_path=${s}" \
-              go run main.go migrate -c hack/test.env
+            sed -e "s|^DB_NAMESPACE=.*|DB_NAMESPACE=\"$s\"|" \
+                -e "s|^DATABASE_URL=.*|DATABASE_URL=\"${AUTH_URL}?search_path=${s}\"|" \
+                hack/test.env > "/tmp/tenant-$s.env"
+            grep -E '^(DB_NAMESPACE|DATABASE_URL)=' "/tmp/tenant-$s.env"
+            go run main.go migrate -c "/tmp/tenant-$s.env"
             psql "$SUPER_URL" -c "select count(*) as tables from pg_tables where schemaname = '$s'"
           done
 
