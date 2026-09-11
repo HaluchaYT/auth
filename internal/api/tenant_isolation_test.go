@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/supabase/auth/internal/conf"
@@ -47,7 +49,41 @@ func TestCrossTenantIsolation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, api.tenantStore, "multitenant should be initialised")
-	_ = config
+
+	// Surface the API's internal error logs (a 500 body is deliberately opaque).
+	logrus.SetOutput(os.Stderr)
+	logrus.SetLevel(logrus.DebugLevel)
+
+	// ---- Diagnostics: prove tenant routing at the storage layer before HTTP ----
+	tcfg, err := api.tenantStore.Load(context.Background(), "t-one")
+	require.NoError(t, err, "load tenant t-one from registry")
+	require.Equal(t, "t_one_auth", tcfg.Schema)
+
+	tctx := tenant.WithConfig(context.Background(), tcfg)
+	tdb := api.db.WithContext(tctx)
+
+	// (1) a NON-transactional query must already be pinned by the pool DSN
+	var sp string
+	require.NoError(t, tdb.RawQuery("select current_setting('search_path')").First(&sp),
+		"non-transactional query on tenant connection")
+	require.Contains(t, sp, "t_one_auth", "tenant pool must pin search_path; got %q", sp)
+
+	// (2) a transactional query runs under the hook
+	var n int
+	require.NoError(t, tdb.Transaction(func(tx *storage.Connection) error {
+		return tx.RawQuery("select count(*) from users").First(&n)
+	}), "transactional query on tenant connection")
+	require.Equal(t, 0, n, "fresh tenant schema should have no users")
+
+	// (3) the cloned schema accepts an insert
+	require.NoError(t, tdb.Transaction(func(tx *storage.Connection) error {
+		return tx.RawQuery(`insert into users (id, instance_id, aud, role, email, created_at, updated_at)
+			values (gen_random_uuid(), '00000000-0000-0000-0000-000000000000', ?, 'authenticated', 'probe@example.com', now(), now())`,
+			config.JWT.Aud).Exec()
+	}), "raw insert into tenant users table")
+	require.NoError(t, tdb.Transaction(func(tx *storage.Connection) error {
+		return tx.RawQuery("delete from users where email = 'probe@example.com'").Exec()
+	}))
 
 	const email = "alice@example.com"
 	const password = "correct-horse-battery-staple"
