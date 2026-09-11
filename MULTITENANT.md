@@ -76,6 +76,7 @@ handler or DB access runs.
 | `internal/api/tenant_overlay.go` (new) | `initMultiTenant`, `tenantConfig(ctx)` overlay (SiteURL, redirect allowlist, SMTP, JWT issuer, Google/GitHub/Discord apps) |
 | `internal/api/tenant_mailer.go` (new) | `mailer.Mailer` dispatcher caching one templatemailer per tenant |
 | `internal/api/external.go` | `Provider()` and `getExternalRedirectURL()` read the overlaid config |
+| `internal/api/middleware.go` | `isValidExternalHost` uses the tenant's own Host as the external host for email links / redirects |
 | `internal/api/api.go` | Wires middleware + store when `MultiTenant.Enabled` |
 | `internal/conf/configuration.go` | `MultiTenantConfiguration` (`GOTRUE_MULTITENANT_*`) |
 | `internal/models/cleanup.go`, `cmd/serve_cmd.go` | Background paths marked `tenant.WithSystem` |

@@ -21,6 +21,7 @@ import (
 	"github.com/supabase/auth/internal/models"
 	"github.com/supabase/auth/internal/observability"
 	"github.com/supabase/auth/internal/sbff"
+	"github.com/supabase/auth/internal/tenant"
 	"github.com/supabase/auth/internal/utilities"
 
 	"github.com/didip/tollbooth/v5"
@@ -312,6 +313,24 @@ func (a *API) isValidExternalHost(w http.ResponseWriter, req *http.Request) (con
 	xForwardedHost := req.Header.Get("X-Forwarded-Host")
 	xForwardedProto := req.Header.Get("X-Forwarded-Proto")
 	reqHost := req.URL.Hostname()
+
+	// multitenant: the tenant middleware already proved this request's Host
+	// names a registered tenant, so it IS the external host. Email links and
+	// redirects must point at the tenant's own auth URL, never at the global
+	// API_EXTERNAL_URL / MAILER_EXTERNAL_HOSTS. req.Host (not
+	// X-Forwarded-Host) is used because that is what the tenant was resolved
+	// from.
+	if _, ok := tenant.FromContext(ctx); ok && req.Host != "" {
+		protocol := "https"
+		if strings.HasPrefix(req.Host, "localhost") && (xForwardedProto == "http" || req.URL.Scheme == "http") {
+			protocol = "http"
+		}
+		externalHostURL, err := url.ParseRequestURI(fmt.Sprintf("%s://%s", protocol, req.Host))
+		if err != nil {
+			return ctx, err
+		}
+		return withExternalHost(ctx, externalHostURL), nil
+	}
 
 	if len(config.Mailer.ExternalHosts) > 0 {
 		// this server is configured to accept multiple external hosts, validate the host from the X-Forwarded-Host or Host headers
