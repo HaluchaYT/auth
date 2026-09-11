@@ -1,0 +1,49 @@
+name: multitenant
+
+on:
+  pull_request:
+  push:
+    branches: [feat/tenant-schema-routing, main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tenant package + boundary lint
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Lint — tenant boundary
+        run: bash scripts/lint-tenant-boundary.sh
+
+      - name: Test — tenant package
+        run: go test -race -count=1 ./internal/tenant/...
+
+      - name: Test — storage tenant hook
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+        run: go test -race -count=1 -run 'Tenant' ./internal/storage/...
