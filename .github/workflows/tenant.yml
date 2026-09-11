@@ -9,24 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  unit:
     name: Tenant package + boundary lint
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,7 +28,63 @@ jobs:
       - name: Test — tenant package
         run: go test -race -count=1 ./internal/tenant/...
 
-      - name: Test — storage tenant hook
+      - name: Test — storage tenant helpers (no DB)
+        run: go test -race -count=1 -run 'Tenant' ./internal/storage/
+
+  format:
+    name: gofmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check gofmt
+        run: make check-format
+
+  full-suite:
+    # Mirrors upstream's "Test / Postgres" job on a GitHub-hosted runner
+    # (upstream pins Blacksmith runners, which a fork does not have), and
+    # additionally enables the gated end-to-end tenant isolation test.
+    name: Full suite + tenant isolation (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
-        run: go test -race -count=1 -run 'Tenant' ./internal/storage/...
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: root
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Init database
+        run: psql -f hack/init_postgres.sql postgresql://postgres:root@localhost:5432/postgres
+
+      - name: Run migrations
+        run: make migrate_dev
+
+      - name: Run tests (upstream suite + TestCrossTenantIsolation)
+        env:
+          GOTRUE_MULTITENANT_TEST: "1"
+        run: go test ./... -p 1 -race -count=1

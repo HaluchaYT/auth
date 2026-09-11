@@ -100,9 +100,16 @@ func provisionTestTenants(conn *storage.Connection, slugs ...string) error {
 		}
 	}
 
-	var tables []string
-	if err := conn.RawQuery(`select tablename from pg_tables where schemaname = 'auth'`).All(&tables); err != nil {
+	type pgTable struct {
+		Tablename string `db:"tablename"`
+	}
+	var rows []pgTable
+	if err := conn.RawQuery(`select tablename from pg_tables where schemaname = 'auth'`).All(&rows); err != nil {
 		return err
+	}
+	tables := make([]string, 0, len(rows))
+	for _, r := range rows {
+		tables = append(tables, r.Tablename)
 	}
 
 	for _, slug := range slugs {
