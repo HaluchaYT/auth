@@ -320,12 +320,16 @@ func (a *API) isValidExternalHost(w http.ResponseWriter, req *http.Request) (con
 	// API_EXTERNAL_URL / MAILER_EXTERNAL_HOSTS. req.Host (not
 	// X-Forwarded-Host) is used because that is what the tenant was resolved
 	// from.
-	if _, ok := tenant.FromContext(ctx); ok && req.Host != "" {
+	if _, ok := tenant.FromContext(ctx); ok {
+		host, _ := tenant.HostFromContext(ctx)
+		if host == "" {
+			host = req.Host
+		}
 		protocol := "https"
-		if strings.HasPrefix(req.Host, "localhost") && (xForwardedProto == "http" || req.URL.Scheme == "http") {
+		if strings.HasPrefix(host, "localhost") && (xForwardedProto == "http" || req.URL.Scheme == "http") {
 			protocol = "http"
 		}
-		externalHostURL, err := url.ParseRequestURI(fmt.Sprintf("%s://%s", protocol, req.Host))
+		externalHostURL, err := url.ParseRequestURI(fmt.Sprintf("%s://%s", protocol, host))
 		if err != nil {
 			return ctx, err
 		}

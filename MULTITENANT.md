@@ -95,6 +95,7 @@ spots to keep rebases cheap.
 | `GOTRUE_MULTITENANT_CONTROL_DB_URL` | *(main DB)* | Separate Postgres for the registry, if wanted |
 | `GOTRUE_MULTITENANT_CACHE_TTL` | `5m` | Registry row cache lifetime |
 | `GOTRUE_MULTITENANT_POOL_SIZE` | `4` | Max open connections per tenant pool |
+| `GOTRUE_MULTITENANT_TRUST_FORWARDED_HOST` | `false` | Resolve the tenant from `X-Forwarded-Host` (proxy-set) instead of `Host` — for Kong/Traefik chains that rewrite the upstream Host |
 
 All other `GOTRUE_*` settings act as per-tenant defaults.
 
@@ -134,23 +135,36 @@ All other `GOTRUE_*` settings act as per-tenant defaults.
 5. **Run the image** (built by `.github/workflows/build.yml`):
    ```
    GOTRUE_MULTITENANT_ENABLED=true
-   GOTRUE_MULTITENANT_STRICT=true        # after verifying background paths
+   GOTRUE_MULTITENANT_TRUST_FORWARDED_HOST=true   # behind Kong/Traefik; see Hardening
+   GOTRUE_MULTITENANT_STRICT=true                 # after verifying background paths
    ```
    In Coolify, point the Supabase stack's `auth` service at
-   `ghcr.io/<you>/auth:multi-tenant` and add a Kong route for
-   `auth-*.your-domain.com` → that container.
-6. **Per-site Vercel env**:
+   `ghcr.io/<you>/auth:multi-tenant` (make the GHCR package public or add
+   a pull secret), and add each tenant hostname (`auth-dennys.your-domain.com`,
+   …) as a domain on the Supabase stack so Traefik issues certificates and
+   routes it to Kong. Kong routes by path (`/auth/v1`, `/rest/v1`, …)
+   regardless of host, so one stack serves every tenant hostname.
+6. **Per-site Vercel env** — supabase-js derives the auth endpoint from the
+   base URL, so each site simply uses its tenant hostname as the base URL:
    ```
-   NEXT_PUBLIC_SUPABASE_URL=https://db.your-domain.com
-   NEXT_PUBLIC_SUPABASE_AUTH_URL=https://auth-dennys.your-domain.com
+   NEXT_PUBLIC_SUPABASE_URL=https://auth-dennys.your-domain.com
    NEXT_PUBLIC_SUPABASE_ANON_KEY=<from Coolify>
    ```
-   The JS SDK is unchanged; only the auth URL differs per site.
+   and selects its data schema in the client (`db: { schema: 'dennys' }`).
+   REST/Storage/Realtime are host-agnostic, auth is scoped by the hostname.
 
 Config edits take effect within `CACHE_TTL`; bump `updated_at` (the trigger
 does it) and per-tenant mailers/overlays rebuild automatically.
 
 ## Hardening (recommended in production)
+
+- **Host behind a proxy.** Kong (as shipped in the Supabase compose) sets
+  the upstream `Host` to the service name unless the route has
+  `preserve_host: true`. Either set that on the `auth-v1*` routes in
+  `kong.yml`, or enable `GOTRUE_MULTITENANT_TRUST_FORWARDED_HOST=true`
+  (Kong overwrites `X-Forwarded-Host` with the client's Host and does not
+  trust client-supplied values by default). Never enable it if the auth
+  container is reachable without going through the proxy.
 
 - **Decoy default search_path.** Give the auth DB role a default
   `search_path` that contains no auth tables (e.g. `ALTER USER

@@ -27,12 +27,17 @@ var slugPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{2,30}$`)
 //  4. Load from the Store — 404 if the slug isn't registered.
 //  5. Attach to context. Forward to next.
 //
-// The middleware never trusts a client-supplied header for tenant identity;
-// req.Host is TLS-pinned and Kong-verified.
-func Middleware(store *Store) func(http.Handler) http.Handler {
+// By default the middleware never trusts a client-supplied header for tenant
+// identity; req.Host is TLS-pinned. Behind a reverse proxy that rewrites the
+// upstream Host (Kong without preserve_host, Traefik → Kong chains) enable
+// trustForwardedHost so the proxy-set X-Forwarded-Host is used instead. Only
+// do this when clients cannot reach the auth container except through that
+// proxy, and the proxy overwrites X-Forwarded-Host itself (Kong does).
+func Middleware(store *Store, trustForwardedHost bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			slug, ok := extractSlug(r.Host)
+			host := resolveHost(r, trustForwardedHost)
+			slug, ok := extractSlug(host)
 			if !ok {
 				writeUnknownTenant(w)
 				return
@@ -42,10 +47,24 @@ func Middleware(store *Store) func(http.Handler) http.Handler {
 				writeUnknownTenant(w)
 				return
 			}
-			ctx := WithConfig(r.Context(), cfg)
+			ctx := WithHost(WithConfig(r.Context(), cfg), host)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// resolveHost picks the host used for tenant resolution. With
+// trustForwardedHost the first X-Forwarded-Host value wins when present.
+func resolveHost(r *http.Request, trustForwardedHost bool) string {
+	if trustForwardedHost {
+		if xfh := r.Header.Get("X-Forwarded-Host"); xfh != "" {
+			if idx := strings.IndexByte(xfh, ','); idx >= 0 {
+				xfh = xfh[:idx]
+			}
+			return strings.TrimSpace(xfh)
+		}
+	}
+	return r.Host
 }
 
 // extractSlug pulls the tenant slug from a Host header. Returns (slug, true)

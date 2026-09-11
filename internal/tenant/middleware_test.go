@@ -1,6 +1,26 @@
 package tenant
 
-import "testing"
+import (
+	"net/http/httptest"
+	"testing"
+)
+
+func TestResolveHost(t *testing.T) {
+	r := httptest.NewRequest("GET", "http://auth-dennys.example.com/token", nil)
+	r.Host = "auth-dennys.example.com"
+	r.Header.Set("X-Forwarded-Host", "auth-boozegenie.example.com, kong.internal")
+
+	if got := resolveHost(r, false); got != "auth-dennys.example.com" {
+		t.Fatalf("untrusted: got %q", got)
+	}
+	if got := resolveHost(r, true); got != "auth-boozegenie.example.com" {
+		t.Fatalf("trusted: got %q", got)
+	}
+	r.Header.Del("X-Forwarded-Host")
+	if got := resolveHost(r, true); got != "auth-dennys.example.com" {
+		t.Fatalf("trusted without header: got %q", got)
+	}
+}
 
 func TestExtractSlug(t *testing.T) {
 	cases := []struct {

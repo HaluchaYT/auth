@@ -475,6 +475,13 @@ type MultiTenantConfiguration struct {
 	// are many and mostly idle, so keep this small; idle connections are
 	// released after DB.ConnMaxIdleTime. GOTRUE_MULTITENANT_POOL_SIZE.
 	PoolSize int `json:"pool_size" split_words:"true" default:"4"`
+
+	// TrustForwardedHost resolves the tenant from X-Forwarded-Host instead of
+	// Host. Enable only behind a reverse proxy (Kong/Traefik) that rewrites
+	// the upstream Host and sets X-Forwarded-Host itself, and only when the
+	// auth container is not reachable except through that proxy.
+	// GOTRUE_MULTITENANT_TRUST_FORWARDED_HOST.
+	TrustForwardedHost bool `json:"trust_forwarded_host" split_words:"true" default:"false"`
 }
 
 // GlobalConfiguration holds all the configuration that applies to all instances.

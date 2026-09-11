@@ -10,7 +10,28 @@ type ctxKey struct{}
 var (
 	configKey = ctxKey{}
 	systemKey = &struct{ name string }{"tenant.system"}
+	hostKey   = &struct{ name string }{"tenant.host"}
 )
+
+// WithHost records the external host the tenant was resolved from (either
+// req.Host or, when trusted, X-Forwarded-Host). Downstream code building
+// absolute URLs (email links, redirects) must use this rather than
+// re-reading headers so it agrees with the resolution.
+func WithHost(ctx context.Context, host string) context.Context {
+	if host == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, hostKey, host)
+}
+
+// HostFromContext returns the host recorded by WithHost, if any.
+func HostFromContext(ctx context.Context) (string, bool) {
+	if ctx == nil {
+		return "", false
+	}
+	h, ok := ctx.Value(hostKey).(string)
+	return h, ok && h != ""
+}
 
 // Strict controls what happens when a DB transaction is opened with no
 // tenant in context and no system marker. When true, the transaction is

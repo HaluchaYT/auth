@@ -180,7 +180,7 @@ func NewAPIWithVersion(globalConfig *conf.GlobalConfiguration, db *storage.Conne
 	if api.tenantStore != nil {
 		// Resolve the tenant as early as possible so every later middleware
 		// and handler (rate limiting, logging, DB, JWT, mail) sees it.
-		r.UseBypass(tenant.Middleware(api.tenantStore))
+		r.UseBypass(tenant.Middleware(api.tenantStore, globalConfig.MultiTenant.TrustForwardedHost))
 	}
 	r.UseBypass(
 		sbff.Middleware(
