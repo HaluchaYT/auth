@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -38,6 +39,7 @@ func TestCrossTenantIsolation(t *testing.T) {
 		t.Skip("set GOTRUE_MULTITENANT_TEST=1 to run the multitenant integration test")
 	}
 
+	var provisionErr error
 	api, config, err := setupAPIForTestWithCallback(func(c *conf.GlobalConfiguration, conn *storage.Connection) {
 		if c != nil {
 			c.MultiTenant.Enabled = true
@@ -46,10 +48,14 @@ func TestCrossTenantIsolation(t *testing.T) {
 			c.External.Email.Enabled = true
 		}
 		if conn != nil {
-			require.NoError(t, provisionTestTenants(conn, "t_one", "t_two"))
+			provisionErr = provisionTestTenants(conn, "t_one", "t_two")
 		}
 	})
 	require.NoError(t, err)
+	if errors.Is(provisionErr, errTenantSchemaMissing) {
+		t.Skipf("%v — provision t_one_auth/t_two_auth with the upstream migrations first (see provisionTestTenants)", provisionErr)
+	}
+	require.NoError(t, provisionErr)
 	require.NotNil(t, api.tenantStore, "multitenant should be initialised")
 
 	// Surface the API's internal error logs (a 500 body is deliberately opaque).
@@ -150,8 +156,19 @@ func TestCrossTenantIsolation(t *testing.T) {
 	}
 }
 
-// provisionTestTenants creates the control schema, clones the upstream auth
-// tables into one schema per tenant and registers the tenants.
+// errTenantSchemaMissing signals that the tenant schemas have not been
+// provisioned with the upstream migrations. The test skips with
+// instructions rather than failing — cloning tables in-test is not an
+// option because LIKE renames constraints the service relies on.
+var errTenantSchemaMissing = errors.New("tenant schema not provisioned")
+
+// provisionTestTenants creates the control schema and registers the
+// tenants. The tenant schemas themselves must already be migrated:
+//
+//	psql "$PG_SUPERUSER_URL" -c 'create schema if not exists t_one_auth authorization supabase_auth_admin'
+//	DB_NAMESPACE=t_one_auth DATABASE_URL="$DATABASE_URL?search_path=t_one_auth" go run main.go migrate -c hack/test.env
+//
+// (and the same for t_two_auth) — see .github/workflows/tenant.yml.
 func provisionTestTenants(conn *storage.Connection, slugs ...string) error {
 	stmts := []string{
 		`create schema if not exists _control`,
@@ -169,29 +186,27 @@ func provisionTestTenants(conn *storage.Connection, slugs ...string) error {
 		}
 	}
 
-	type pgTable struct {
-		Tablename string `db:"tablename"`
-	}
-	var rows []pgTable
-	if err := conn.RawQuery(`select tablename from pg_tables where schemaname = 'auth'`).All(&rows); err != nil {
-		return err
-	}
-	tables := make([]string, 0, len(rows))
-	for _, r := range rows {
-		tables = append(tables, r.Tablename)
-	}
-
 	for _, slug := range slugs {
 		schema := slug + "_auth"
-		if err := conn.RawQuery(fmt.Sprintf(`create schema if not exists %q`, schema)).Exec(); err != nil {
+
+		var n int
+		if err := conn.RawQuery(
+			`select count(*) from pg_tables where schemaname = ? and tablename = 'users'`, schema,
+		).First(&n); err != nil {
 			return err
 		}
-		for _, tbl := range tables {
-			q := fmt.Sprintf(`create table if not exists %q.%q (like auth.%q including all)`, schema, tbl, tbl)
+		if n == 0 {
+			return fmt.Errorf("%w: %s", errTenantSchemaMissing, schema)
+		}
+
+		// Keep re-runs idempotent on a persistent local database.
+		for _, tbl := range []string{"users"} {
+			q := fmt.Sprintf(`delete from %q.%q where email in ('alice@example.com','direct@example.com','probe@example.com')`, schema, tbl)
 			if err := conn.RawQuery(q).Exec(); err != nil {
 				return err
 			}
 		}
+
 		secret, err := tenant.GenerateJWTSecret()
 		if err != nil {
 			return err

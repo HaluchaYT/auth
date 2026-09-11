@@ -56,39 +56,15 @@ for each row execute function _control._set_updated_at();
 -- ============================================================
 -- Provisioning a tenant's auth schema.
 --
--- PREFERRED: run the upstream migrations against the tenant namespace.
--- Every migration file is templated on {{ index .Options "Namespace" }},
--- so this produces a complete, correct schema — tables, foreign keys,
--- triggers, functions and indexes — identical to `auth`:
+-- Always run the upstream migrations against the tenant namespace. Every
+-- migration file is templated on {{ index .Options "Namespace" }}, so this
+-- produces a complete, correct schema — tables, foreign keys, triggers,
+-- functions, indexes AND the exact constraint names the service relies on
+-- (e.g. ON CONFLICT ON CONSTRAINT mfa_amr_claims_session_id_authentication_method_pkey):
 --
 --   GOTRUE_DB_NAMESPACE=dennys_auth ./auth migrate
 --
--- FALLBACK: the helper below clones the table shapes from `auth` with
--- LIKE ... INCLUDING ALL. Note that LIKE does NOT copy foreign keys, so
--- ON DELETE CASCADE between users/identities/sessions will be missing.
--- Use it only for throwaway/test tenants.
---
--- Usage:
---   select _control.provision_tenant_schema('dennys_auth');
+-- Do NOT clone tables with CREATE TABLE ... (LIKE auth.x INCLUDING ALL):
+-- LIKE drops foreign keys and gives copied constraints generated names,
+-- which breaks upserts inside the service.
 -- ============================================================
-create or replace function _control.provision_tenant_schema(target_schema text)
-returns void language plpgsql as $$
-declare
-  tbl record;
-begin
-  if target_schema !~ '^[a-z_][a-z0-9_]{0,62}$' then
-    raise exception 'invalid schema name: %', target_schema;
-  end if;
-
-  execute format('create schema if not exists %I', target_schema);
-
-  for tbl in
-    select tablename from pg_tables where schemaname = 'auth'
-  loop
-    execute format(
-      'create table if not exists %I.%I (like auth.%I including all)',
-      target_schema, tbl.tablename, tbl.tablename
-    );
-  end loop;
-end;
-$$;

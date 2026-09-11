@@ -84,6 +84,23 @@ jobs:
       - name: Run migrations
         run: make migrate_dev
 
+      - name: Provision tenant schemas (the documented production path)
+        # Create each tenant schema, then run the upstream migrations with
+        # the namespace AND the DSN search_path pointed at it, so tables and
+        # the migrator's own schema_migrations land in the tenant schema.
+        env:
+          SUPER_URL: postgresql://postgres:root@localhost:5432/postgres
+          AUTH_URL: postgres://supabase_auth_admin:root@localhost:5432/postgres
+        run: |
+          set -euo pipefail
+          for s in t_one_auth t_two_auth; do
+            psql "$SUPER_URL" -c "create schema if not exists $s authorization supabase_auth_admin"
+            DB_NAMESPACE="$s" GOTRUE_DB_NAMESPACE="$s" \
+            DATABASE_URL="${AUTH_URL}?search_path=${s}" GOTRUE_DB_DATABASE_URL="${AUTH_URL}?search_path=${s}" \
+              go run main.go migrate -c hack/test.env
+            psql "$SUPER_URL" -c "select count(*) as tables from pg_tables where schemaname = '$s'"
+          done
+
       - name: Run tests (upstream suite + TestCrossTenantIsolation)
         env:
           GOTRUE_MULTITENANT_TEST: "1"

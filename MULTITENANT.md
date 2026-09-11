@@ -80,7 +80,7 @@ handler or DB access runs.
 | `internal/api/api.go` | Wires middleware + store when `MultiTenant.Enabled` |
 | `internal/conf/configuration.go` | `MultiTenantConfiguration` (`GOTRUE_MULTITENANT_*`) |
 | `internal/models/cleanup.go`, `cmd/serve_cmd.go` | Background paths marked `tenant.WithSystem` |
-| `db/migrations/001_tenant_control_schema.sql` | `_control._tenants` registry (+ test-only clone helper) |
+| `db/migrations/001_tenant_control_schema.sql` | `_control._tenants` registry |
 | `scripts/lint-tenant-boundary.sh`, `.github/workflows/tenant.yml`, `build.yml` | Lint + tests + GHCR image |
 
 Roughly 1,100 lines added; upstream files are touched in small, local
@@ -111,10 +111,14 @@ All other `GOTRUE_*` settings act as per-tenant defaults.
    ```
 3. **Provision each tenant's schema with the upstream migrations** — they
    are templated on the namespace, so this yields a complete, correct copy
-   (foreign keys, triggers, functions, indexes):
+   (foreign keys, triggers, functions, indexes, and the exact constraint
+   names the service's upserts reference):
    ```
    GOTRUE_DB_NAMESPACE=dennys_auth ./auth migrate
    ```
+   Never clone tables with `CREATE TABLE … (LIKE … INCLUDING ALL)` — it
+   drops foreign keys and renames constraints, which breaks e.g. the
+   `mfa_amr_claims` upsert during sign-in.
 4. **Register the tenant**:
    ```sql
    insert into _control._tenants
@@ -167,10 +171,18 @@ does it) and per-tenant mailers/overlays rebuild automatically.
 
 - Unit (no DB): `go test ./internal/tenant/... ./internal/storage/ -run Tenant`
 - Lint: `bash scripts/lint-tenant-boundary.sh`
-- End to end (needs the migrated test DB):
+- End to end (needs the migrated test DB plus two migrated tenant schemas —
+  the same steps a real deployment uses):
   ```
+  for s in t_one_auth t_two_auth; do
+    psql postgresql://postgres:root@localhost:5432/postgres \
+      -c "create schema if not exists $s authorization supabase_auth_admin"
+    DB_NAMESPACE=$s DATABASE_URL="postgres://supabase_auth_admin:root@localhost:5432/postgres?search_path=$s" \
+      go run main.go migrate -c hack/test.env
+  done
   GOTRUE_MULTITENANT_TEST=1 go test ./internal/api -run TestCrossTenantIsolation -v
   ```
+  The test skips with instructions if the tenant schemas are missing.
   Proves the same email can sign up on two tenants, each token is rejected
   by the other tenant, unknown subdomains 404, and each schema holds
   exactly its own user.
