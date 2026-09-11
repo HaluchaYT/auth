@@ -105,6 +105,15 @@ jobs:
             psql "$SUPER_URL" -c "select count(*) as tables from pg_tables where schemaname = '$s'"
           done
 
+      - name: Tenant isolation test (verbose; a skip is a failure)
+        env:
+          GOTRUE_MULTITENANT_TEST: "1"
+        run: |
+          set -o pipefail
+          go test ./internal/api -run 'TestCrossTenantIsolation' -race -count=1 -v 2>&1 | tee /tmp/isolation.log
+          grep -q -- '--- PASS: TestCrossTenantIsolation' /tmp/isolation.log \
+            || { echo "::error::TestCrossTenantIsolation did not PASS (skipped or failed)"; exit 1; }
+
       - name: Run tests (upstream suite + TestCrossTenantIsolation)
         env:
           GOTRUE_MULTITENANT_TEST: "1"
