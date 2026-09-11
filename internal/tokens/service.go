@@ -23,6 +23,7 @@ import (
 	"github.com/supabase/auth/internal/metering"
 	"github.com/supabase/auth/internal/models"
 	"github.com/supabase/auth/internal/storage"
+	"github.com/supabase/auth/internal/tenant"
 	"github.com/supabase/auth/internal/utilities"
 )
 
@@ -716,7 +717,7 @@ func (s *Service) GenerateAccessToken(r *http.Request, tx *storage.Connection, p
 			Audience:  jwt.ClaimStrings{params.User.Aud},
 			IssuedAt:  jwt.NewNumericDate(issuedAt),
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
-			Issuer:    config.JWT.Issuer,
+			Issuer:    tenantIssuer(ctx, config.JWT.Issuer),
 		},
 		Email:                         params.User.GetEmail(),
 		Phone:                         params.User.GetPhone(),
@@ -801,7 +802,7 @@ func (s *Service) GenerateIDToken(ctx context.Context, params GenerateIDTokenPar
 			Audience:  jwt.ClaimStrings{params.ClientID.String()},
 			IssuedAt:  jwt.NewNumericDate(issuedAt),
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
-			Issuer:    config.JWT.Issuer,
+			Issuer:    tenantIssuer(ctx, config.JWT.Issuer),
 		},
 		AuthTime: authTime.Unix(),
 		ClientID: params.ClientID.String(),
@@ -973,6 +974,18 @@ func (s *Service) IssueRefreshToken(r *http.Request, responseHeaders http.Header
 
 // SignJWT signs a JWT token with the configured signing key
 func SignJWT(ctx context.Context, config *conf.JWTConfiguration, claims jwt.Claims) (string, error) {
+	// multitenant: tokens issued under a resolved tenant are HS256-signed
+	// with that tenant's own key and carry kid "tenant:<slug>". They verify
+	// only against the same tenant — never the global key, never another
+	// tenant's key. See internal/api/auth.go parseJWTClaims.
+	if tc, ok := tenant.FromContext(ctx); ok {
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		token.Header["kid"] = tc.KeyID()
+		// this serializes the aud claim to a string
+		jwt.MarshalSingleStringAsArray = false
+		return token.SignedString(tc.JWTSecretBytes())
+	}
+
 	signingJwk, err := conf.GetSigningJwk(config)
 	if err != nil {
 		return "", err

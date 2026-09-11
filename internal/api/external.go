@@ -602,7 +602,9 @@ func (a *API) loadExternalStateFromUUID(ctx context.Context, db *storage.Connect
 
 // Provider returns a Provider interface for the given name.
 func (a *API) Provider(ctx context.Context, name string, scopes string) (provider.Provider, conf.OAuthProviderConfiguration, error) {
-	config := a.config
+	// multitenant: a resolved tenant's own OAuth app credentials overlay
+	// the global ones (see tenantConfig); without a tenant this is a.config.
+	config := a.tenantConfig(ctx)
 	db := a.db.WithContext(ctx)
 	name = strings.ToLower(name)
 
@@ -893,7 +895,7 @@ func getErrorQueryString(err error, errorID string, log logrus.FieldLogger, q ur
 
 func (a *API) getExternalRedirectURL(r *http.Request) string {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	if config.External.RedirectURL != "" {
 		return config.External.RedirectURL
 	}

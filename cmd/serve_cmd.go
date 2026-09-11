@@ -21,6 +21,7 @@ import (
 	"github.com/supabase/auth/internal/mailer/templatemailer"
 	"github.com/supabase/auth/internal/reloader"
 	"github.com/supabase/auth/internal/storage"
+	"github.com/supabase/auth/internal/tenant"
 	"github.com/supabase/auth/internal/utilities"
 )
 
@@ -97,7 +98,10 @@ func serve(ctx context.Context) {
 
 		// Work exits when ctx is done as in-flight requests do not depend
 		// on it. If they do in the future this should be baseCtx instead.
-		err = wrk.Work(ctx)
+		//
+		// multitenant: the worker is an operator background path — mark
+		// its context so strict mode lets its DB access run unscoped.
+		err = wrk.Work(tenant.WithSystem(ctx))
 	}()
 
 	if watchDir != "" {

@@ -447,6 +447,36 @@ type ReloadingConfiguration struct {
 	GracePeriodInterval time.Duration `json:"grace_period_interval" split_words:"true" default:"5s"`
 }
 
+// MultiTenantConfiguration enables serving many isolated auth realms — one
+// Postgres schema, JWT key, SMTP identity and OAuth app set per tenant —
+// from a single process. Tenants are registered in _control._tenants and
+// resolved per request from the Host subdomain. See MULTITENANT.md.
+type MultiTenantConfiguration struct {
+	// Enabled wires the tenant-resolving middleware and the per-tenant JWT,
+	// mailer and OAuth overlays. GOTRUE_MULTITENANT_ENABLED.
+	Enabled bool `json:"enabled" default:"false"`
+
+	// Strict refuses any DB transaction opened without a resolved tenant
+	// or an explicit system marker (tenant.WithSystem). Turn on in
+	// production once every background path is marked.
+	// GOTRUE_MULTITENANT_STRICT.
+	Strict bool `json:"strict" default:"false"`
+
+	// ControlDBURL optionally points the tenant registry at a different
+	// Postgres than the main DB. Empty means the main connection is shared.
+	// GOTRUE_MULTITENANT_CONTROL_DB_URL.
+	ControlDBURL string `json:"control_db_url" split_words:"true"`
+
+	// CacheTTL is how long a resolved tenant config stays cached in memory
+	// before the registry row is re-read. GOTRUE_MULTITENANT_CACHE_TTL.
+	CacheTTL time.Duration `json:"cache_ttl" split_words:"true" default:"5m"`
+
+	// PoolSize is the max open connections in each per-tenant pool. Tenants
+	// are many and mostly idle, so keep this small; idle connections are
+	// released after DB.ConnMaxIdleTime. GOTRUE_MULTITENANT_POOL_SIZE.
+	PoolSize int `json:"pool_size" split_words:"true" default:"4"`
+}
+
 // GlobalConfiguration holds all the configuration that applies to all instances.
 type GlobalConfiguration struct {
 	API           APIConfiguration
@@ -494,6 +524,7 @@ type GlobalConfiguration struct {
 
 	Experimental ExperimentalConfiguration `json:"experimental"`
 	Reloading    ReloadingConfiguration    `json:"reloading"`
+	MultiTenant  MultiTenantConfiguration  `json:"multitenant" envconfig:"MULTITENANT"`
 }
 
 type CORSConfiguration struct {

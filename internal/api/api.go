@@ -25,6 +25,7 @@ import (
 	"github.com/supabase/auth/internal/sbff"
 	"github.com/supabase/auth/internal/security"
 	"github.com/supabase/auth/internal/storage"
+	"github.com/supabase/auth/internal/tenant"
 	"github.com/supabase/auth/internal/tokens"
 	"github.com/supabase/auth/internal/utilities"
 	"github.com/supabase/hibp"
@@ -58,6 +59,10 @@ type API struct {
 	overrideTime func() time.Time
 
 	limiterOpts *apilimiter.Limiter
+
+	// multitenant: nil unless config.MultiTenant.Enabled. See tenant_overlay.go.
+	tenantStore    *tenant.Store
+	tenantOverlays tenantOverlayCache
 }
 
 func (a *API) GetConfig() *conf.GlobalConfiguration { return a.config }
@@ -162,12 +167,21 @@ func NewAPIWithVersion(globalConfig *conf.GlobalConfiguration, db *storage.Conne
 
 	api.deprecationNotices()
 
+	if globalConfig.MultiTenant.Enabled {
+		api.initMultiTenant(globalConfig, db)
+	}
+
 	xffmw, _ := xff.Default()
 	logger := observability.NewStructuredLogger(logrus.StandardLogger(), globalConfig)
 
 	r := newRouter()
 	r.UseBypass(recoverer)
 	r.UseBypass(observability.AddRequestID(globalConfig))
+	if api.tenantStore != nil {
+		// Resolve the tenant as early as possible so every later middleware
+		// and handler (rate limiting, logging, DB, JWT, mail) sees it.
+		r.UseBypass(tenant.Middleware(api.tenantStore))
+	}
 	r.UseBypass(
 		sbff.Middleware(
 			&globalConfig.Security,

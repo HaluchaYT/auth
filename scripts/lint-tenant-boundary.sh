@@ -1,34 +1,48 @@
 #!/usr/bin/env bash
 # ============================================================
-# Grep backstop for the tenant boundary invariant.
+# Tenant-boundary lint.
 #
-# The wrapped-DB pattern (see internal/storage/tenant_hook.go) makes it
-# structurally impossible to run a query without a tenant in context —
-# BUT that only holds if every model call goes through
-# WithTenantTransaction / WithTenantSqlDB.
+# Tenant isolation is enforced inside storage.Connection.Transaction()
+# (see internal/storage/tenant_hook.go), so every ordinary
+# `db.Transaction(...)` call is automatically scoped. The only ways to
+# bypass the hook are:
 #
-# This script fails CI if it detects a model file directly using the
-# naked storage.Connection.Transaction() or a raw *sql.DB. When you see
-# it fire, either:
+#   1. Calling pop's embedded transaction directly:
+#        conn.Connection.Transaction(...)
+#      Allowed ONLY in internal/storage/dial.go (that is the hook).
 #
-#   1. Convert the call site to WithTenantTransaction (usually correct)
-#   2. If the code path is genuinely tenant-independent (bootstrap,
-#      migrations, control table access), add a nolint comment:
-#        // multitenant:allow-raw-db  <reason>
+#   2. Talking to database/sql directly (*sql.DB / *sql.Tx / sqlx) from
+#      request-scoped packages. Allowed only in the files listed below.
+#
+# If this fires, route the call through storage.Connection.Transaction /
+# WithTenantTransaction / WithTenantSqlDB, or — for an operator-only
+# background path — mark the line with:
+#        // multitenant:allow-raw-db <reason>
 # ============================================================
 set -euo pipefail
 
-# Files under internal/models are always request-scoped and must use
-# the tenant-aware helpers. Anything using the naked Transaction() or
-# raw *sql.DB in this directory is a red flag.
-if git grep -nE '\.Transaction\(|\*sql\.DB' -- 'internal/models/*.go' \
-    ':!*_test.go' \
+fail=0
+
+echo "check 1: direct pop transaction bypass"
+if git grep -nE '\.Connection\.Transaction\(' -- 'internal/**/*.go' 'cmd/**/*.go' \
+    ':!internal/storage/dial.go' ':!*_test.go' \
     | grep -v 'multitenant:allow-raw-db'; then
+  echo "!! pop transaction opened without the tenant hook (see above)"
+  fail=1
+fi
+
+echo "check 2: raw database/sql in request-scoped packages"
+if git grep -nE '\*sql\.(DB|Tx)\b|sqlx\.' -- 'internal/api/**/*.go' 'internal/models/**/*.go' 'internal/tokens/**/*.go' \
+    ':!*_test.go' \
+    ':!internal/api/tenant_overlay.go' \
+    | grep -v 'multitenant:allow-raw-db'; then
+  echo "!! raw database/sql usage in a request-scoped package (see above)"
+  fail=1
+fi
+
+if [[ "$fail" -ne 0 ]]; then
   echo ""
-  echo "!! Tenant boundary lint failed."
-  echo "!! One or more model call sites is using a raw DB primitive instead"
-  echo "!! of WithTenantTransaction. Route it through the tenant hook or"
-  echo "!! add a 'multitenant:allow-raw-db' comment with a reason."
+  echo "Tenant boundary lint FAILED."
   exit 1
 fi
 

@@ -9,48 +9,83 @@ import (
 	"github.com/supabase/auth/internal/tenant"
 )
 
-// WithTenantTransaction runs fn inside a Postgres transaction whose
-// search_path is scoped to the resolved tenant's schema. This is the ONE
-// entry point every model call MUST use — never touch the naked
-// Connection.Transaction() from a request-scoped code path.
+// applyTenantSearchPath is called at the top of every transaction opened
+// through Connection.Transaction. It is the single point where tenant
+// isolation is enforced at the database layer:
 //
-// The tenant is pulled from ctx via tenant.FromContext. If ctx has no
-// tenant, this returns tenant.ErrMissingTenant BEFORE opening any DB
-// resource. This is by design: a query without a tenant boundary must
-// not be able to reach Postgres.
+//   - tenant in ctx        → SET LOCAL search_path TO "<tenant schema>", ...
+//   - no tenant, system    → run unscoped (operator background paths)
+//   - no tenant, strict    → refuse with tenant.ErrMissingTenant
+//   - no tenant, lenient   → run unscoped (upstream behaviour)
 //
-// The tenant-scoped search_path is set with SET LOCAL, which Postgres
-// automatically clears at COMMIT or ROLLBACK. That means the setting can
-// never leak to the next request that reuses the same pooled connection.
+// Because SET LOCAL is transaction-scoped, Postgres resets it at COMMIT or
+// ROLLBACK and it can never leak to the next request that reuses the same
+// pooled connection.
+func applyTenantSearchPath(ctx context.Context, tx *Connection) error {
+	if cfg, ok := tenant.FromContext(ctx); ok {
+		// Defence in depth: the middleware validated the slug, and the
+		// control table has a CHECK on schema_name, but never build SQL
+		// from an identifier we haven't re-validated here.
+		if !isSafeIdentifier(cfg.Schema) {
+			return tenant.ErrInvalidSlug
+		}
+		if err := tx.RawQuery(tenantSearchPathSQL(cfg.Schema)).Exec(); err != nil {
+			return fmt.Errorf("tenant: SET LOCAL search_path: %w", err)
+		}
+		return nil
+	}
+	if tenant.IsSystem(ctx) {
+		// Operator background path. Pin it to the configured system schema
+		// when multitenant is on, so it never depends on the connection's
+		// default search_path (which a hardened deployment may point at a
+		// decoy schema — see MULTITENANT.md → Hardening).
+		if tenant.SystemSchema != "" {
+			if !isSafeIdentifier(tenant.SystemSchema) {
+				return tenant.ErrInvalidSlug
+			}
+			if err := tx.RawQuery(tenantSearchPathSQL(tenant.SystemSchema)).Exec(); err != nil {
+				return fmt.Errorf("tenant: SET LOCAL search_path (system): %w", err)
+			}
+		}
+		return nil
+	}
+	if tenant.Strict {
+		return tenant.ErrMissingTenant
+	}
+	return nil
+}
+
+// tenantSearchPathSQL builds the SET LOCAL statement for a validated schema.
+//
+// The tenant schema comes first. public and extensions follow only so that
+// unqualified helper functions (gen_random_uuid, crypt, …) still resolve.
+// The shared upstream auth schema is deliberately NOT on the path: a table
+// missing from a tenant's schema must fail loudly, never fall through to
+// another realm's rows. Non-existent schemas on the path are ignored by
+// Postgres, so listing extensions is safe where it does not exist.
+func tenantSearchPathSQL(schema string) string {
+	return "SET LOCAL search_path TO " + pqQuoteIdent(schema) + ", public, extensions"
+}
+
+// WithTenantTransaction is the explicit form of the hook: it refuses to run
+// unless a tenant is resolved (regardless of strict mode) and then runs fn
+// inside a tenant-scoped transaction. Prefer this in new code paths that
+// must never run unscoped; existing paths get the same behaviour implicitly
+// through Connection.Transaction.
 func (c *Connection) WithTenantTransaction(ctx context.Context, fn func(*Connection) error) error {
 	cfg, ok := tenant.FromContext(ctx)
 	if !ok {
 		return tenant.ErrMissingTenant
 	}
-	// Defence-in-depth: never build SQL from an unvalidated schema name.
-	// The middleware already validates against slugPattern, but revalidate
-	// so a code path that constructs a Config without the middleware
-	// still can't inject.
 	if !isSafeIdentifier(cfg.Schema) {
 		return tenant.ErrInvalidSlug
 	}
-
-	cx := c.WithContext(ctx)
-	return cx.Transaction(func(tx *Connection) error {
-		if err := tx.RawQuery(fmt.Sprintf("SET LOCAL search_path TO %s", pqQuoteIdent(cfg.Schema))).Exec(); err != nil {
-			return fmt.Errorf("tenant hook: SET LOCAL search_path: %w", err)
-		}
-		return fn(tx)
-	})
+	return c.WithContext(ctx).Transaction(fn)
 }
 
-// WithTenantSqlDB is the lower-level variant that hands the caller a
-// *sql.DB-style handle already committed to a tenant transaction. Used by
-// code paths that construct queries via raw SQL rather than pop models.
-//
-// The txFn receives an *sql.Tx that has already run SET LOCAL search_path.
-// The caller MUST NOT commit or roll back the tx directly — return an error
-// (or nil) from txFn and this helper does the finalization.
+// WithTenantSqlDB is the lower-level variant for code that speaks raw
+// database/sql rather than pop. txFn receives an *sql.Tx that has already
+// run SET LOCAL search_path; it must not Commit or Rollback itself.
 func WithTenantSqlDB(ctx context.Context, db *sql.DB, txFn func(*sql.Tx) error) error {
 	cfg, ok := tenant.FromContext(ctx)
 	if !ok {
@@ -64,9 +99,6 @@ func WithTenantSqlDB(ctx context.Context, db *sql.DB, txFn func(*sql.Tx) error) 
 	if err != nil {
 		return err
 	}
-	// The rollback here is a no-op if the caller returns nil and we commit
-	// successfully below; deferred Rollback after Commit returns
-	// sql.ErrTxDone which is safe to ignore.
 	committed := false
 	defer func() {
 		if !committed {
@@ -74,8 +106,8 @@ func WithTenantSqlDB(ctx context.Context, db *sql.DB, txFn func(*sql.Tx) error) 
 		}
 	}()
 
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL search_path TO %s", pqQuoteIdent(cfg.Schema))); err != nil {
-		return fmt.Errorf("tenant hook: SET LOCAL search_path: %w", err)
+	if _, err := tx.ExecContext(ctx, tenantSearchPathSQL(cfg.Schema)); err != nil {
+		return fmt.Errorf("tenant: SET LOCAL search_path: %w", err)
 	}
 	if err := txFn(tx); err != nil {
 		return err
@@ -87,11 +119,11 @@ func WithTenantSqlDB(ctx context.Context, db *sql.DB, txFn func(*sql.Tx) error) 
 	return nil
 }
 
-// isSafeIdentifier accepts only what Postgres would parse as an unquoted
-// identifier without needing quoting: [a-z_][a-z0-9_]*. Kept restrictive
-// on purpose — the tenant slug regex allows dashes but we translate schema
-// names to snake_case in the control table, so schema names never contain
-// dashes anyway.
+// isSafeIdentifier accepts only what Postgres parses as a plain unquoted
+// identifier: [a-z_][a-z0-9_]*, at most 63 bytes. Tenant schema names are
+// snake_case by construction (see the CHECK constraint on
+// _control._tenants.schema_name), so anything else is an error, not a
+// quoting problem.
 func isSafeIdentifier(s string) bool {
 	if s == "" || len(s) > 63 {
 		return false
@@ -111,9 +143,8 @@ func isSafeIdentifier(s string) bool {
 	return true
 }
 
-// pqQuoteIdent wraps a validated identifier in double quotes for use in SQL.
-// We already validated with isSafeIdentifier, so this is belt-and-braces —
-// the resulting string is safe to interpolate into a SET LOCAL statement.
+// pqQuoteIdent double-quotes an identifier for use in SQL. The input has
+// already passed isSafeIdentifier; quoting is belt-and-braces.
 func pqQuoteIdent(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }

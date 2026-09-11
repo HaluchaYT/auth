@@ -14,6 +14,7 @@ import (
 	"github.com/supabase/auth/internal/conf"
 	"github.com/supabase/auth/internal/models"
 	"github.com/supabase/auth/internal/storage"
+	"github.com/supabase/auth/internal/tenant"
 )
 
 // requireAuthentication checks incoming requests for tokens presented using the Authorization header
@@ -83,6 +84,24 @@ func (a *API) extractBearerToken(r *http.Request) (string, error) {
 func (a *API) parseJWTClaims(bearer string, r *http.Request) (context.Context, error) {
 	ctx := r.Context()
 	config := a.config
+
+	// multitenant: under a resolved tenant only an HS256 token signed with
+	// that tenant's key (kid "tenant:<slug>") is acceptable. The global
+	// secret and every other tenant's key are rejected outright, so a token
+	// minted for site A can never authenticate at site B.
+	if tc, ok := tenant.FromContext(ctx); ok {
+		p := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Name}))
+		token, err := p.ParseWithClaims(bearer, &AccessTokenClaims{}, func(token *jwt.Token) (interface{}, error) {
+			if kid, _ := token.Header["kid"].(string); kid != tc.KeyID() {
+				return nil, fmt.Errorf("JWT kid %q does not belong to tenant %q", kid, tc.Slug)
+			}
+			return tc.JWTSecretBytes(), nil
+		})
+		if err != nil {
+			return nil, apierrors.NewForbiddenError(apierrors.ErrorCodeBadJWT, "invalid JWT: unable to parse or verify signature, %v", err).WithInternalError(err)
+		}
+		return withToken(ctx, token), nil
+	}
 
 	p := jwt.NewParser(jwt.WithValidMethods(config.JWT.ValidMethods))
 	token, err := p.ParseWithClaims(bearer, &AccessTokenClaims{}, func(token *jwt.Token) (interface{}, error) {

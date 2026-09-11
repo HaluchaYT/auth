@@ -15,6 +15,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/supabase/auth/internal/conf"
+	"github.com/supabase/auth/internal/tenant"
 )
 
 // Connection is the interface a storage provider must implement. Do not copy
@@ -22,6 +23,12 @@ import (
 type Connection struct {
 	*pop.Connection
 	sqldb *sql.DB
+
+	// cfg is the configuration this connection was dialed with. It is
+	// needed to derive per-tenant pools (see tenant_pool.go) and is nil
+	// for connections not created through DialContext (tests, copies of
+	// legacy constructions).
+	cfg *conf.GlobalConfiguration
 }
 
 // Dial will connect to that storage engine
@@ -54,12 +61,15 @@ func DialContext(
 	conn := &Connection{
 		Connection: db,
 		sqldb:      sqldb,
+		cfg:        config,
 	}
 	return conn, nil
 }
 
-// // GetSqlDB returns the underlying *sql.DB and true or nil if no db could be obtained.
-// func (c *Connection) GetSqlDB() (*sql.DB, bool) { return c.sqldb, c.sqldb != nil }
+// SqlDB returns the underlying *sql.DB, or nil if it could not be obtained
+// from the pop connection. Used by the multitenant registry store so the
+// tenant table can share the main connection pool.
+func (c *Connection) SqlDB() *sql.DB { return c.sqldb }
 
 // Copy will return a copy of this connection. It must be instead of using a
 // struct literal from external packages.
@@ -283,7 +293,9 @@ func (c *Connection) applyPercentageLimits(
 
 // showMaxConns retrieves the max_connections from the db.
 func (c *Connection) showMaxConns(ctx context.Context) (int, error) {
-	db := c.WithContext(ctx)
+	// multitenant: startup probe, not a request — mark as a system path so
+	// strict mode doesn't refuse it.
+	db := c.WithContext(tenant.WithSystem(ctx))
 
 	var maxConns int
 	err := db.Transaction(func(tx *Connection) error {
@@ -379,6 +391,16 @@ func (c *Connection) Transaction(fn func(*Connection) error) error {
 			conn := c.Copy()
 			conn.Connection = tx
 
+			// multitenant: scope this transaction to the resolved tenant's
+			// schema, or refuse it in strict mode. SET LOCAL is cleared by
+			// Postgres at COMMIT/ROLLBACK, so the setting can never survive
+			// to the next user of this pooled connection. The context is
+			// read from the outer connection, which is where WithContext
+			// stored it.
+			if err := applyTenantSearchPath(c.Context(), conn); err != nil {
+				return err
+			}
+
 			err := fn(conn)
 			switch err.(type) {
 			case *CommitWithError:
@@ -403,8 +425,25 @@ func (c *Connection) Transaction(fn func(*Connection) error) error {
 
 // WithContext returns a new connection with an updated context. This is
 // typically used for tracing as the context contains trace span information.
+//
+// multitenant: when ctx carries a resolved tenant, the returned connection
+// is drawn from that tenant's dedicated pool, whose DSN pins search_path to
+// the tenant schema. Every query on it — inside or outside a transaction —
+// is therefore scoped to the tenant without any call-site changes. See
+// tenant_pool.go.
 func (c *Connection) WithContext(ctx context.Context) *Connection {
-	cpy := c.Copy()
+	base := c
+	if tc, ok := tenant.FromContext(ctx); ok && c.cfg != nil && c.cfg.MultiTenant.Enabled {
+		if pool, err := tenantPools.get(ctx, c.cfg, tc); err != nil {
+			// Fail loud in logs; the SET LOCAL hook in Transaction and the
+			// hardening described in MULTITENANT.md keep a misrouted query
+			// from silently landing in another schema.
+			logrus.WithError(err).WithField("tenant", tc.Slug).Error("multitenant: unable to obtain tenant pool; using base connection")
+		} else {
+			base = pool
+		}
+	}
+	cpy := base.Copy()
 	cpy.Connection = cpy.Connection.WithContext(ctx)
 	return cpy
 }

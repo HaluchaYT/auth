@@ -54,9 +54,19 @@ before update on _control._tenants
 for each row execute function _control._set_updated_at();
 
 -- ============================================================
--- Bootstrap helper: create a new tenant's auth schema and copy the
--- upstream GoTrue tables into it. Call once per tenant AFTER GoTrue's
--- upstream migrations have created the reference `auth` schema.
+-- Provisioning a tenant's auth schema.
+--
+-- PREFERRED: run the upstream migrations against the tenant namespace.
+-- Every migration file is templated on {{ index .Options "Namespace" }},
+-- so this produces a complete, correct schema — tables, foreign keys,
+-- triggers, functions and indexes — identical to `auth`:
+--
+--   GOTRUE_DB_NAMESPACE=dennys_auth ./auth migrate
+--
+-- FALLBACK: the helper below clones the table shapes from `auth` with
+-- LIKE ... INCLUDING ALL. Note that LIKE does NOT copy foreign keys, so
+-- ON DELETE CASCADE between users/identities/sessions will be missing.
+-- Use it only for throwaway/test tenants.
 --
 -- Usage:
 --   select _control.provision_tenant_schema('dennys_auth');

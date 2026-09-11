@@ -14,6 +14,7 @@ import (
 	"github.com/supabase/auth/internal/conf"
 	"github.com/supabase/auth/internal/observability"
 	"github.com/supabase/auth/internal/storage"
+	"github.com/supabase/auth/internal/tenant"
 )
 
 type Cleaner interface {
@@ -119,7 +120,9 @@ func (c *Cleanup) Clean(db *storage.Connection) (int, error) {
 	affectedRows := 0
 	defer span.SetAttributes(attribute.Int64("gotrue.cleanup.affected_rows", int64(affectedRows)))
 
-	if err := db.WithContext(ctx).Transaction(func(tx *storage.Connection) error {
+	// multitenant: cleanup is an operator background path, not a request —
+	// mark it so strict mode lets it run against the default search_path.
+	if err := db.WithContext(tenant.WithSystem(ctx)).Transaction(func(tx *storage.Connection) error { // multitenant:allow-raw-db system cleanup path
 		nextIndex := atomic.AddUint32(&c.cleanupNext, 1) % uint32(len(c.cleanupStatements)) // #nosec G115
 		statement := c.cleanupStatements[nextIndex]
 
