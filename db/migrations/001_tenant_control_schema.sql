@@ -100,3 +100,19 @@ for each row execute function _control._set_updated_at();
 -- LIKE drops foreign keys and gives copied constraints generated names,
 -- which breaks upserts inside the service.
 -- ============================================================
+
+-- ============================================================
+-- Privileges for the auth service role (Supabase stacks run auth as
+-- supabase_auth_admin). It must read the registry and, for
+-- GOTRUE_MULTITENANT_AUTO_PROVISION, create tenant schemas.
+-- No-op when the role does not exist (bare Postgres / CI).
+-- ============================================================
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin') then
+    grant usage on schema _control to supabase_auth_admin;
+    grant select on _control._tenants to supabase_auth_admin;
+    execute format('grant create on database %I to supabase_auth_admin', current_database());
+  end if;
+end;
+$$;
