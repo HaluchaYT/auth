@@ -54,7 +54,7 @@ alter table _control._tenants
   alter column jwt_issuer  drop not null;
 
 create or replace function _control._tenants_defaults()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = '' as $$
 begin
   if new.schema_name is null or new.schema_name = '' then
     new.schema_name := replace(new.slug, '-', '_') || '_auth';
@@ -73,7 +73,7 @@ for each row execute function _control._tenants_defaults();
 
 -- Auto-update updated_at
 create or replace function _control._set_updated_at()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = '' as $$
 begin
   new.updated_at := now();
   return new;
