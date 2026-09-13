@@ -36,6 +36,16 @@ var slugPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{2,30}$`)
 func Middleware(store *Store, trustForwardedHost bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Liveness/readiness probes are not tenant-scoped. A container
+			// health check hits http://127.0.0.1:9999/health, whose Host is
+			// not a tenant subdomain, so it must answer regardless of tenant
+			// resolution. Without this exemption the probe 404s and the
+			// container is reported unhealthy even though tenant traffic
+			// (which arrives on auth-<slug>.<domain>) resolves normally.
+			if r.URL.Path == "/health" {
+				next.ServeHTTP(w, r)
+				return
+			}
 			host := resolveHost(r, trustForwardedHost)
 			slug, ok := extractSlug(host)
 			if !ok {
