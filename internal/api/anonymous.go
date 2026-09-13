@@ -11,7 +11,7 @@ import (
 
 func (a *API) SignupAnonymously(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	db := a.db.WithContext(ctx)
 	aud := a.requestAud(ctx, r)
 

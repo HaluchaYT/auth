@@ -23,7 +23,7 @@ func isAdmin(u *models.User, config *conf.GlobalConfiguration) bool {
 }
 
 func (a *API) requestAud(ctx context.Context, r *http.Request) string {
-	config := a.config
+	config := a.tenantConfig(ctx)
 	// First check for an audience in the header
 	if aud := r.Header.Get(audHeaderName); aud != "" {
 		return aud

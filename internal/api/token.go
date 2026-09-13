@@ -77,7 +77,7 @@ func (a *API) ResourceOwnerPasswordGrant(ctx context.Context, w http.ResponseWri
 	}
 
 	aud := a.requestAud(ctx, r)
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	if params.Email != "" && params.Phone != "" {
 		return apierrors.NewBadRequestError(apierrors.ErrorCodeValidationFailed, "Only an email address or phone number should be provided on login.")
@@ -213,7 +213,7 @@ func (a *API) ResourceOwnerPasswordGrant(ctx context.Context, w http.ResponseWri
 
 func (a *API) PKCE(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 	var grantParams models.GrantParams
 
 	// There is a slight problem with this as it will pick-up the
@@ -302,7 +302,7 @@ func (a *API) issueRefreshToken(r *http.Request, headers http.Header, conn *stor
 
 func (a *API) updateMFASessionAndClaims(r *http.Request, tx *storage.Connection, user *models.User, authenticationMethod models.AuthenticationMethod, grantParams models.GrantParams) (*tokens.AccessTokenResponse, error) {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	var tokenString string
 	var expiresAt int64
 	var issuedRefreshToken string

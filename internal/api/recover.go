@@ -33,7 +33,7 @@ func (p *RecoverParams) Validate(a *API) error {
 func (a *API) Recover(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	params := &RecoverParams{}
 	if err := retrieveRequestParams(r, params); err != nil {

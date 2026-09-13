@@ -41,7 +41,7 @@ func (p *MagicLinkParams) Validate(a *API) error {
 func (a *API) MagicLink(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	if !config.External.Email.Enabled {
 		return apierrors.NewUnprocessableEntityError(apierrors.ErrorCodeEmailProviderDisabled, "Email logins are disabled")

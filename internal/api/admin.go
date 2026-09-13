@@ -196,7 +196,7 @@ func (a *API) adminUserGet(w http.ResponseWriter, r *http.Request) error {
 func (a *API) adminUserUpdate(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 	user := getUser(ctx)
 	adminUser := getAdminUser(ctx)
 	params, err := a.getAdminParams(r)
@@ -400,7 +400,7 @@ func (a *API) adminUserUpdate(w http.ResponseWriter, r *http.Request) error {
 func (a *API) adminUserCreate(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	adminUser := getAdminUser(ctx)
 	params, err := a.getAdminParams(r)
@@ -595,7 +595,7 @@ func (a *API) adminUserCreate(w http.ResponseWriter, r *http.Request) error {
 func (a *API) adminUserDelete(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	user := getUser(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 	adminUser := getAdminUser(ctx)
 	db := a.db.WithContext(ctx)
 
@@ -660,7 +660,7 @@ func (a *API) adminUserDelete(w http.ResponseWriter, r *http.Request) error {
 
 func (a *API) adminUserDeleteFactor(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	user := getUser(ctx)
 	factor := getFactor(ctx)
 	db := a.db.WithContext(ctx)
@@ -695,7 +695,7 @@ func (a *API) adminUserGetFactors(w http.ResponseWriter, r *http.Request) error 
 // adminUserUpdate updates a single factor object
 func (a *API) adminUserUpdateFactor(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	factor := getFactor(ctx)
 	user := getUser(ctx)
 	adminUser := getAdminUser(ctx)

@@ -18,7 +18,7 @@ import (
 func (a *API) DeleteIdentity(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	claims := getClaims(ctx)
 	if claims == nil {

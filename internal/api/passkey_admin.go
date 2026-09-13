@@ -35,7 +35,7 @@ func (a *API) AdminPasskeyList(w http.ResponseWriter, r *http.Request) error {
 // Requires admin credentials. Deletes the specified passkey.
 func (a *API) AdminPasskeyDelete(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	user := getUser(ctx)
 	adminUser := getAdminUser(ctx)
 	db := a.db.WithContext(ctx)

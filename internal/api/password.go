@@ -26,7 +26,7 @@ func (e *WeakPasswordError) Error() string {
 }
 
 func (a *API) checkPasswordStrength(ctx context.Context, password string) error {
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	if len(password) > MaxPasswordLength {
 		return apierrors.NewBadRequestError(

@@ -136,7 +136,7 @@ func validateFactors(db *storage.Connection, user *models.User, newFactorName st
 
 func (a *API) enrollPhoneFactor(w http.ResponseWriter, r *http.Request, params *EnrollFactorParams) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	user := getUser(ctx)
 	session := getSession(ctx)
 	db := a.db.WithContext(ctx)
@@ -198,7 +198,7 @@ func (a *API) enrollPhoneFactor(w http.ResponseWriter, r *http.Request, params *
 func (a *API) enrollWebAuthnFactor(w http.ResponseWriter, r *http.Request, params *EnrollFactorParams) error {
 	ctx := r.Context()
 	user := getUser(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 	session := getSession(ctx)
 	db := a.db.WithContext(ctx)
 
@@ -233,7 +233,7 @@ func (a *API) enrollTOTPFactor(w http.ResponseWriter, r *http.Request, params *E
 	ctx := r.Context()
 	user := getUser(ctx)
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 	session := getSession(ctx)
 	issuer := ""
 	if params.Issuer == "" {
@@ -307,7 +307,7 @@ func (a *API) EnrollFactor(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	user := getUser(ctx)
 	session := getSession(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	if session == nil || user == nil {
 		return apierrors.NewInternalServerError("A valid session and a registered user are required to enroll a factor")
@@ -341,7 +341,7 @@ func (a *API) EnrollFactor(w http.ResponseWriter, r *http.Request) error {
 
 func (a *API) challengePhoneFactor(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	db := a.db.WithContext(ctx)
 	user := getUser(ctx)
 	factor := getFactor(ctx)
@@ -427,7 +427,7 @@ func (a *API) challengePhoneFactor(w http.ResponseWriter, r *http.Request) error
 
 func (a *API) challengeTOTPFactor(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	db := a.db.WithContext(ctx)
 
 	user := getUser(ctx)
@@ -461,7 +461,7 @@ func (a *API) challengeTOTPFactor(w http.ResponseWriter, r *http.Request) error 
 func (a *API) challengeWebAuthnFactor(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	user := getUser(ctx)
 	factor := getFactor(ctx)
@@ -538,7 +538,7 @@ func (a *API) challengeWebAuthnFactor(w http.ResponseWriter, r *http.Request) er
 }
 
 func (a *API) validateChallenge(r *http.Request, db *storage.Connection, factor *models.Factor, challengeID uuid.UUID) (*models.Challenge, error) {
-	config := a.config
+	config := a.tenantConfig(r.Context())
 	currentIP := utilities.GetIPAddress(r)
 
 	challenge, err := factor.FindChallengeByID(db, challengeID)
@@ -565,7 +565,7 @@ func (a *API) validateChallenge(r *http.Request, db *storage.Connection, factor 
 
 func (a *API) ChallengeFactor(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	factor := getFactor(ctx)
 
 	switch factor.FactorType {
@@ -596,7 +596,7 @@ func (a *API) verifyTOTPFactor(w http.ResponseWriter, r *http.Request, params *V
 	ctx := r.Context()
 	user := getUser(ctx)
 	factor := getFactor(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 	db := a.db.WithContext(ctx)
 
 	challenge, err := a.validateChallenge(r, db, factor, params.ChallengeID)
@@ -728,7 +728,7 @@ func (a *API) verifyTOTPFactor(w http.ResponseWriter, r *http.Request, params *V
 
 func (a *API) verifyPhoneFactor(w http.ResponseWriter, r *http.Request, params *VerifyFactorParams) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	user := getUser(ctx)
 	factor := getFactor(ctx)
 	db := a.db.WithContext(ctx)
@@ -868,7 +868,7 @@ func (a *API) verifyPhoneFactor(w http.ResponseWriter, r *http.Request, params *
 
 func (a *API) verifyWebAuthnFactor(w http.ResponseWriter, r *http.Request, params *VerifyFactorParams) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	user := getUser(ctx)
 	factor := getFactor(ctx)
 	db := a.db.WithContext(ctx)
@@ -989,7 +989,7 @@ func (a *API) verifyWebAuthnFactor(w http.ResponseWriter, r *http.Request, param
 func (a *API) VerifyFactor(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	factor := getFactor(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	params := &VerifyFactorParams{}
 	if err := retrieveRequestParams(r, params); err != nil {
@@ -1025,7 +1025,7 @@ func (a *API) VerifyFactor(w http.ResponseWriter, r *http.Request) error {
 func (a *API) UnenrollFactor(w http.ResponseWriter, r *http.Request) error {
 	var err error
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	user := getUser(ctx)
 	factor := getFactor(ctx)
 	session := getSession(ctx)

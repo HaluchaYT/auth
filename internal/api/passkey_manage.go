@@ -53,7 +53,7 @@ func (a *API) PasskeyList(w http.ResponseWriter, r *http.Request) error {
 // Requires authentication. Updates the friendly_name of a passkey owned by the authenticated user.
 func (a *API) PasskeyUpdate(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	user := getUser(ctx)
 	db := a.db.WithContext(ctx)
 
@@ -110,7 +110,7 @@ func (a *API) PasskeyUpdate(w http.ResponseWriter, r *http.Request) error {
 // Requires authentication. Deletes a passkey owned by the authenticated user.
 func (a *API) PasskeyDelete(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	user := getUser(ctx)
 	session := getSession(ctx)
 	db := a.db.WithContext(ctx)

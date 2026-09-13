@@ -231,7 +231,7 @@ func (a *API) requireAdminCredentials(w http.ResponseWriter, req *http.Request) 
 
 func (a *API) requireEmailProvider(w http.ResponseWriter, req *http.Request) (context.Context, error) {
 	ctx := req.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	if !config.External.Email.Enabled {
 		return nil, apierrors.NewBadRequestError(apierrors.ErrorCodeEmailProviderDisabled, "Email logins are disabled")
@@ -242,7 +242,7 @@ func (a *API) requireEmailProvider(w http.ResponseWriter, req *http.Request) (co
 
 func (a *API) verifyCaptcha(w http.ResponseWriter, req *http.Request) (context.Context, error) {
 	ctx := req.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	if !config.Security.Captcha.Enabled {
 		return ctx, nil

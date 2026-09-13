@@ -30,7 +30,7 @@ type SignupParams struct {
 }
 
 func (a *API) validateSignupParams(ctx context.Context, p *SignupParams) error {
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	if p.Password == "" {
 		return apierrors.NewBadRequestError(apierrors.ErrorCodeValidationFailed, "Signup requires a valid password")
@@ -109,7 +109,7 @@ func (params *SignupParams) ToUserModel(isSSOUser bool) (user *models.User, err 
 // Signup is the endpoint for registering a new user
 func (a *API) Signup(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	db := a.db.WithContext(ctx)
 
 	if config.DisableSignup {

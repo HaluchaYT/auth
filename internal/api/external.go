@@ -37,7 +37,7 @@ func (a *API) ExternalProviderRedirect(w http.ResponseWriter, r *http.Request) e
 func (a *API) GetExternalProviderRedirectURL(w http.ResponseWriter, r *http.Request, linkingTargetUser *models.User) (string, error) {
 	ctx := r.Context()
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	query := r.URL.Query()
 	providerType := query.Get("provider")
@@ -301,7 +301,7 @@ func (a *API) internalExternalProviderCallback(w http.ResponseWriter, r *http.Re
 func (a *API) createAccountFromExternalIdentity(tx *storage.Connection, r *http.Request, userData *provider.UserProvidedData, providerType string, emailOptional bool) (models.AccountLinkingDecision, *models.User, error) {
 	ctx := r.Context()
 	aud := a.requestAud(ctx, r)
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	var user *models.User
 	var identity *models.Identity
@@ -464,7 +464,7 @@ func (a *API) createAccountFromExternalIdentity(tx *storage.Connection, r *http.
 }
 
 func (a *API) processInvite(r *http.Request, tx *storage.Connection, userData *provider.UserProvidedData, inviteToken, providerType string) (*models.User, error) {
-	config := a.config
+	config := a.tenantConfig(r.Context())
 
 	user, err := models.FindUserByOneTimeToken(tx, inviteToken, models.ConfirmationToken)
 	if err != nil {
@@ -553,7 +553,7 @@ func (a *API) loadExternalState(ctx context.Context, r *http.Request, db *storag
 
 // loadExternalStateFromUUID loads OAuth state from a flow_state record (new UUID format)
 func (a *API) loadExternalStateFromUUID(ctx context.Context, db *storage.Connection, stateID uuid.UUID) (context.Context, error) {
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	flowState, err := models.FindFlowStateByID(db, stateID.String())
 	if models.IsNotFoundError(err) {
@@ -706,7 +706,7 @@ func (a *API) Provider(ctx context.Context, name string, scopes string) (provide
 // loadCustomProvider loads a custom OAuth or OIDC provider from the database
 // identifier should be the full provider name with 'custom:' prefix (e.g., 'custom:github-enterprise')
 func (a *API) loadCustomProvider(ctx context.Context, db *storage.Connection, identifier string, scopes string) (provider.Provider, conf.OAuthProviderConfiguration, error) {
-	config := a.config
+	config := a.tenantConfig(ctx)
 	var pConfig conf.OAuthProviderConfiguration
 
 	externalURL := config.API.ExternalURL

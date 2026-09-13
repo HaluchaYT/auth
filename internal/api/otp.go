@@ -102,7 +102,7 @@ type SmsOtpResponse struct {
 func (a *API) SmsOtp(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	if !config.External.Phone.Enabled {
 		return apierrors.NewBadRequestError(apierrors.ErrorCodePhoneProviderDisabled, "Unsupported phone provider")

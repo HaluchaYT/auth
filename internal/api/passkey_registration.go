@@ -41,7 +41,7 @@ type PasskeyMetadataResponse struct {
 // Requires authentication. Generates WebAuthn registration options for adding a passkey to an existing account.
 func (a *API) PasskeyRegistrationOptions(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	user := getUser(ctx)
 	session := getSession(ctx)
 	db := a.db.WithContext(ctx)
@@ -111,7 +111,7 @@ func (a *API) PasskeyRegistrationOptions(w http.ResponseWriter, r *http.Request)
 // Requires authentication. Verifies the WebAuthn credential and creates a passkey for the authenticated user.
 func (a *API) PasskeyRegistrationVerify(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	user := getUser(ctx)
 	session := getSession(ctx)
 	db := a.db.WithContext(ctx)

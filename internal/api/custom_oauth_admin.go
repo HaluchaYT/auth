@@ -139,7 +139,7 @@ func (a *API) adminCustomOAuthProviderGet(w http.ResponseWriter, r *http.Request
 func (a *API) adminCustomOAuthProviderCreate(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	// Parse request parameters
 	params := &AdminCustomOAuthProviderParams{}
@@ -252,7 +252,7 @@ func (a *API) adminCustomOAuthProviderCreate(w http.ResponseWriter, r *http.Requ
 func (a *API) adminCustomOAuthProviderUpdate(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	identifier := chi.URLParam(r, "identifier")
 	if identifier == "" {

@@ -29,7 +29,7 @@ type UserUpdateParams struct {
 }
 
 func (a *API) validateUserUpdateParams(ctx context.Context, p *UserUpdateParams) error {
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	var err error
 	if p.Email != "" {
@@ -82,7 +82,7 @@ func (a *API) UserGet(w http.ResponseWriter, r *http.Request) error {
 func (a *API) UserUpdate(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 	aud := a.requestAud(ctx, r)
 
 	params := &UserUpdateParams{}

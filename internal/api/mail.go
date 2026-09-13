@@ -52,7 +52,7 @@ type GenerateLinkResponse struct {
 func (a *API) adminGenerateLink(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 	mailer := a.Mailer()
 	adminUser := getAdminUser(ctx)
 	params := &GenerateLinkParams{}
@@ -319,7 +319,7 @@ func (a *API) adminGenerateLink(w http.ResponseWriter, r *http.Request) error {
 func (a *API) sendConfirmation(r *http.Request, tx *storage.Connection, u *models.User, flowType models.FlowType) error {
 	var err error
 
-	config := a.config
+	config := a.tenantConfig(r.Context())
 	maxFrequency := config.SMTP.MaxFrequency
 	otpLength := config.Mailer.OtpLength
 
@@ -358,7 +358,7 @@ func (a *API) sendConfirmation(r *http.Request, tx *storage.Connection, u *model
 }
 
 func (a *API) sendInvite(r *http.Request, tx *storage.Connection, u *models.User) error {
-	config := a.config
+	config := a.tenantConfig(r.Context())
 	otpLength := config.Mailer.OtpLength
 	var err error
 	oldToken := u.ConfirmationToken
@@ -396,7 +396,7 @@ func (a *API) sendInvite(r *http.Request, tx *storage.Connection, u *models.User
 }
 
 func (a *API) sendPasswordRecovery(r *http.Request, tx *storage.Connection, u *models.User, flowType models.FlowType) error {
-	config := a.config
+	config := a.tenantConfig(r.Context())
 	otpLength := config.Mailer.OtpLength
 
 	if err := validateSentWithinFrequencyLimit(u.RecoverySentAt, config.SMTP.MaxFrequency); err != nil {
@@ -437,7 +437,7 @@ func (a *API) sendPasswordRecovery(r *http.Request, tx *storage.Connection, u *m
 }
 
 func (a *API) sendReauthenticationOtp(r *http.Request, tx *storage.Connection, u *models.User) error {
-	config := a.config
+	config := a.tenantConfig(r.Context())
 	maxFrequency := config.SMTP.MaxFrequency
 	otpLength := config.Mailer.OtpLength
 
@@ -479,7 +479,7 @@ func (a *API) sendReauthenticationOtp(r *http.Request, tx *storage.Connection, u
 
 func (a *API) sendMagicLink(r *http.Request, tx *storage.Connection, u *models.User, flowType models.FlowType) error {
 	var err error
-	config := a.config
+	config := a.tenantConfig(r.Context())
 	otpLength := config.Mailer.OtpLength
 
 	// since Magic Link is just a recovery with a different template and behaviour
@@ -522,7 +522,7 @@ func (a *API) sendMagicLink(r *http.Request, tx *storage.Connection, u *models.U
 
 // sendEmailChange sends out an email change token to the new email.
 func (a *API) sendEmailChange(r *http.Request, tx *storage.Connection, u *models.User, email string, flowType models.FlowType) error {
-	config := a.config
+	config := a.tenantConfig(r.Context())
 	otpLength := config.Mailer.OtpLength
 
 	if err := validateSentWithinFrequencyLimit(u.EmailChangeSentAt, config.SMTP.MaxFrequency); err != nil {
@@ -761,7 +761,7 @@ type sendEmailParams struct {
 
 func (a *API) sendEmail(r *http.Request, tx *storage.Connection, u *models.User, params sendEmailParams) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	referrerURL := utilities.GetReferrer(r, config)
 	externalURL := getExternalHost(ctx)
 	otp := params.otp

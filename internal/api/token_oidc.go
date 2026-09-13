@@ -203,7 +203,7 @@ func (a *API) IdTokenGrant(ctx context.Context, w http.ResponseWriter, r *http.R
 	log := observability.GetLogEntry(r).Entry
 
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	params := &IdTokenGrantParams{}
 	if err := retrieveRequestParams(r, params); err != nil {

@@ -31,7 +31,7 @@ type PasskeyAuthenticationVerifyParams struct {
 // PasskeyAuthenticationOptions handles POST /passkeys/authentication/options.
 // Generates WebAuthn authentication options for discoverable credential login.
 func (a *API) PasskeyAuthenticationOptions(w http.ResponseWriter, r *http.Request) error {
-	config := a.config
+	config := a.tenantConfig(r.Context())
 	db := a.db.WithContext(r.Context())
 
 	webAuthn, err := a.getPasskeyWebAuthn()
@@ -68,7 +68,7 @@ func (a *API) PasskeyAuthenticationOptions(w http.ResponseWriter, r *http.Reques
 // Validates the WebAuthn assertion and issues tokens for discoverable credential login.
 func (a *API) PasskeyAuthenticationVerify(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	db := a.db.WithContext(ctx)
 
 	params := &PasskeyAuthenticationVerifyParams{}

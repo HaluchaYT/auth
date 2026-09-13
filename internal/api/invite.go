@@ -20,7 +20,7 @@ type InviteParams struct {
 func (a *API) Invite(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 	adminUser := getAdminUser(ctx)
 	params := &InviteParams{}
 	if err := retrieveRequestParams(r, params); err != nil {

@@ -13,7 +13,7 @@ type JwksResponse struct {
 }
 
 func (a *API) WellKnownJwks(w http.ResponseWriter, r *http.Request) error {
-	config := a.config
+	config := a.tenantConfig(r.Context())
 	resp := JwksResponse{
 		Keys: []jwk.Key{},
 	}
@@ -64,7 +64,7 @@ type OpenIDConfigurationResponse struct {
 //
 // Both endpoints return the same comprehensive metadata since OIDC Discovery is a superset of OAuth 2.0 metadata
 func (a *API) WellKnownOpenID(w http.ResponseWriter, r *http.Request) error {
-	config := a.config
+	config := a.tenantConfig(r.Context())
 	issuer := config.JWT.Issuer
 
 	// Ensure issuer doesn't end with a slash to avoid double slashes in URLs

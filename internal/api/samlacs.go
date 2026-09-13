@@ -47,7 +47,7 @@ func IsSAMLMetadataStale(idpMetadata *saml.EntityDescriptor, samlProvider models
 
 func (a *API) SamlAcs(w http.ResponseWriter, r *http.Request) error {
 	if err := a.handleSamlAcs(w, r); err != nil {
-		u, uerr := url.Parse(a.config.SiteURL)
+		u, uerr := url.Parse(a.tenantConfig(r.Context()).SiteURL)
 		if uerr != nil {
 			return apierrors.NewInternalServerError("site url is improperly formattted").WithInternalError(err)
 		}
@@ -64,7 +64,7 @@ func (a *API) handleSamlAcs(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 
 	db := a.db.WithContext(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 	log := observability.GetLogEntry(r).Entry
 
 	relayStateValue := r.FormValue("RelayState")

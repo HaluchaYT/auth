@@ -20,7 +20,7 @@ const (
 // Logout is the endpoint for logging out a user and thereby revoking any refresh tokens
 func (a *API) Logout(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	db := a.db.WithContext(ctx)
 	scope := LogoutGlobal
 

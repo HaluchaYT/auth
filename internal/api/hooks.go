@@ -64,7 +64,7 @@ func (a *API) triggerBeforeUserCreatedExternal(
 
 	ctx := r.Context()
 	aud := a.requestAud(ctx, r)
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	var identityData map[string]interface{}
 	if userData.Metadata != nil {

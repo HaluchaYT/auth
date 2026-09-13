@@ -98,7 +98,7 @@ func (a *API) Verify(w http.ResponseWriter, r *http.Request) error {
 	case http.MethodGet:
 		params.Token = r.FormValue("token")
 		params.Type = r.FormValue("type")
-		params.RedirectTo = utilities.GetReferrer(r, a.config)
+		params.RedirectTo = utilities.GetReferrer(r, a.tenantConfig(r.Context()))
 		if err := params.Validate(r, a); err != nil {
 			return err
 		}
@@ -311,7 +311,7 @@ func (a *API) verifyPost(w http.ResponseWriter, r *http.Request, params *VerifyP
 }
 
 func (a *API) signupVerify(r *http.Request, ctx context.Context, conn *storage.Connection, user *models.User) (*models.User, error) {
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	shouldUpdatePassword := false
 	if !user.HasPassword() && user.InvitedAt != nil {
@@ -368,7 +368,7 @@ func (a *API) signupVerify(r *http.Request, ctx context.Context, conn *storage.C
 }
 
 func (a *API) recoverVerify(r *http.Request, conn *storage.Connection, user *models.User) (*models.User, error) {
-	config := a.config
+	config := a.tenantConfig(r.Context())
 
 	err := conn.Transaction(func(tx *storage.Connection) error {
 		var terr error
@@ -400,7 +400,7 @@ func (a *API) recoverVerify(r *http.Request, conn *storage.Connection, user *mod
 }
 
 func (a *API) smsVerify(r *http.Request, conn *storage.Connection, user *models.User, params *VerifyParams) (*models.User, error) {
-	config := a.config
+	config := a.tenantConfig(r.Context())
 
 	oldPhone := user.GetPhone()
 	phoneIdentityWasCreated := false
@@ -544,7 +544,7 @@ func (a *API) prepPKCERedirectURL(rurl, code string) (string, error) {
 }
 
 func (a *API) emailChangeVerify(r *http.Request, conn *storage.Connection, params *VerifyParams, user *models.User) (*models.User, error) {
-	config := a.config
+	config := a.tenantConfig(r.Context())
 	if !config.Mailer.Autoconfirm &&
 		config.Mailer.SecureEmailChangeEnabled &&
 		user.EmailChangeConfirmStatus == zeroConfirmation &&

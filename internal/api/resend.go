@@ -70,7 +70,7 @@ func (p *ResendConfirmationParams) Validate(a *API) error {
 // Recover sends a recovery email
 func (a *API) Resend(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-	config := a.config
+	config := a.tenantConfig(ctx)
 	db := a.db.WithContext(ctx)
 	params := &ResendConfirmationParams{}
 	if err := retrieveRequestParams(r, params); err != nil {

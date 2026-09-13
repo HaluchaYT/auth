@@ -23,7 +23,7 @@ type Web3GrantParams struct {
 }
 
 func (a *API) Web3Grant(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	config := a.config
+	config := a.tenantConfig(ctx)
 
 	if !config.External.Web3Solana.Enabled && !config.External.Web3Ethereum.Enabled {
 		return apierrors.NewUnprocessableEntityError(apierrors.ErrorCodeWeb3ProviderDisabled, "Web3 provider is disabled")
@@ -52,7 +52,7 @@ func (a *API) Web3Grant(ctx context.Context, w http.ResponseWriter, r *http.Requ
 }
 
 func (a *API) web3GrantSolana(ctx context.Context, w http.ResponseWriter, r *http.Request, params *Web3GrantParams) error {
-	config := a.config
+	config := a.tenantConfig(ctx)
 	db := a.db.WithContext(ctx)
 
 	if len(params.Message) < 64 {
@@ -204,7 +204,7 @@ func (a *API) web3GrantSolana(ctx context.Context, w http.ResponseWriter, r *htt
 }
 
 func (a *API) web3GrantEthereum(ctx context.Context, w http.ResponseWriter, r *http.Request, params *Web3GrantParams) error {
-	config := a.config
+	config := a.tenantConfig(ctx)
 	db := a.db.WithContext(ctx)
 
 	if len(params.Message) < 64 {

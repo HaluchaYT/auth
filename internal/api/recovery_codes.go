@@ -97,7 +97,7 @@ func (a *API) RecoveryCodesGenerate(w http.ResponseWriter, r *http.Request) erro
 	ctx := r.Context()
 	user := getUser(ctx)
 	session := getSession(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 	db := a.db.WithContext(ctx)
 
 	if session == nil || user == nil {
@@ -190,7 +190,7 @@ func (a *API) RecoveryCodesRegenerate(w http.ResponseWriter, r *http.Request) er
 	ctx := r.Context()
 	user := getUser(ctx)
 	session := getSession(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 	db := a.db.WithContext(ctx)
 
 	if session == nil || user == nil {
@@ -268,7 +268,7 @@ func (a *API) RecoveryCodesVerify(w http.ResponseWriter, r *http.Request) error 
 	ctx := r.Context()
 	user := getUser(ctx)
 	session := getSession(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 	db := a.db.WithContext(ctx)
 
 	if session == nil || user == nil {
@@ -449,7 +449,7 @@ func (a *API) RecoveryCodesDelete(w http.ResponseWriter, r *http.Request) error 
 	ctx := r.Context()
 	user := getUser(ctx)
 	session := getSession(ctx)
-	config := a.config
+	config := a.tenantConfig(ctx)
 	db := a.db.WithContext(ctx)
 
 	if session == nil || user == nil {

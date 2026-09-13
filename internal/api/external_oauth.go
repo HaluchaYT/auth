@@ -44,7 +44,7 @@ func (a *API) loadFlowState(w http.ResponseWriter, r *http.Request) (context.Con
 	var err error
 	ctx, err = a.loadExternalState(ctx, r, db)
 	if err != nil {
-		u, uerr := url.ParseRequestURI(a.config.SiteURL)
+		u, uerr := url.ParseRequestURI(a.tenantConfig(r.Context()).SiteURL)
 		if uerr != nil {
 			return ctx, apierrors.NewInternalServerError("site url is improperly formatted").WithInternalError(uerr)
 		}
