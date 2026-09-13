@@ -152,9 +152,13 @@ func TestCrossTenantIsolation(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, getUserStatus(t, api, "t-one.local", tok2),
 		"tenant two's token must not authenticate on tenant one")
 
-	// An unregistered subdomain never reaches a handler.
-	rec := do(t, api, "nobody.local", http.MethodGet, "/health", nil, "")
-	require.Equal(t, http.StatusNotFound, rec.Code)
+	// An unregistered subdomain never reaches a real handler …
+	rec := do(t, api, "nobody.local", http.MethodGet, "/settings", nil, "")
+	require.Equal(t, http.StatusNotFound, rec.Code, "unknown tenant must be refused before any handler")
+	// … but the liveness probe is deliberately exempt from tenant resolution
+	// (container health checks hit it with a non-tenant Host).
+	rec = do(t, api, "nobody.local", http.MethodGet, "/health", nil, "")
+	require.Equal(t, http.StatusOK, rec.Code, "/health must answer regardless of tenant")
 
 	// Auto-provisioning: t-three had no schema at all. Its first signup
 	// must create t_three_auth, migrate it, and succeed; its token must be
