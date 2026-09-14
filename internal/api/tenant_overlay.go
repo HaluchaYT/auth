@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net/mail"
 	"context"
 	"database/sql"
 	"sync"
@@ -131,7 +132,17 @@ func overlayTenantConfig(base *conf.GlobalConfiguration, tc *tenant.Config) *con
 		cfg.SMTP.User = tc.SMTPUser
 		cfg.SMTP.Pass = tc.SMTPPass
 		if tc.SMTPFrom != "" {
-			cfg.SMTP.AdminEmail = tc.SMTPFrom
+			// smtp_from may carry a display name: "Denny's Garage <office@example.com>".
+			// Split it so the From header shows the name (a real deliverability
+			// signal) and the address stays what the SMTP account authorises.
+			if addr, perr := mail.ParseAddress(tc.SMTPFrom); perr == nil {
+				cfg.SMTP.AdminEmail = addr.Address
+				if addr.Name != "" {
+					cfg.SMTP.SenderName = addr.Name
+				}
+			} else {
+				cfg.SMTP.AdminEmail = tc.SMTPFrom
+			}
 		}
 		// Recompute the cached from-address / normalised headers for the
 		// new identity. Validate never fails for SMTP.
