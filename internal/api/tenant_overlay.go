@@ -1,9 +1,9 @@
 package api
 
 import (
-	"net/mail"
 	"context"
 	"database/sql"
+	"net/mail"
 	"sync"
 	"time"
 
