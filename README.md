@@ -16,8 +16,94 @@ It is originally based on the excellent
 
 If you wish to contribute to the project, please refer to the [contributing guide](/CONTRIBUTING.md).
 
+---
+
+## Multi-tenant fork
+
+> **This is a fork of `supabase/auth`.** It lets **one** auth container serve
+> **many** isolated sites — *tenants* — each with its own users, JWT signing
+> key, mailer and OAuth apps, selected by the request's subdomain. Upstream
+> behaviour is unchanged when the feature is off. Enable with
+> `GOTRUE_MULTITENANT_ENABLED=true`. Full design, deployment and hardening
+> live in **[MULTITENANT.md](./MULTITENANT.md)**.
+
+### Tenant IDs
+
+A **tenant ID** is a short **slug** — e.g. `dennys` — matching
+`^[a-z][a-z0-9_-]{2,30}$`. It is the one thing you choose per site; every
+other identifier is derived from it by convention:
+
+| Derived from slug `dennys` | Value | How |
+|---|---|---|
+| Request hostname | `auth-dennys.<domain>` | first DNS label of `Host`; the `auth-` prefix is optional (`dennys.<domain>` also resolves) |
+| Auth schema (Postgres) | `dennys_auth` | slug with `-` → `_`, suffixed `_auth` |
+| JWT key id (`kid`) | `tenant:dennys` | tokens are HS256 with the tenant's own secret; a token from another tenant (or the global key) is rejected with `403` |
+| JWT `iss` claim | the tenant's `site_url` | |
+
+The tenant is resolved **only** from the `Host` header — never from a JWT
+claim, an `X-Tenant-*` header or a query string. An unknown or malformed
+slug returns `404 {"error":"unknown_tenant"}` before any handler or DB
+access runs. The lone exception is `GET /health`, which answers regardless
+of tenant so container liveness probes work.
+
+### Registering a tenant
+
+Tenants live in one table, `_control._tenants`. Only `slug` and `site_url`
+are required — `schema_name`, `jwt_secret` and `jwt_issuer` fill in via a
+trigger — so the minimal registration is a single row:
+
+```sql
+insert into _control._tenants (slug, site_url)
+values ('dennys', 'https://dennysgaragessf.com');
+```
+
+With `GOTRUE_MULTITENANT_AUTO_PROVISION=true`, the tenant's `dennys_auth`
+schema is created and migrated on its first request (no separate
+`auth migrate`). Add SMTP so the tenant sends its own email — a display
+name in `smtp_from` is honoured — and `redirect_urls` so its post-auth
+links are allowed:
+
+```sql
+insert into _control._tenants
+  (slug, site_url, redirect_urls,
+   smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from)
+values
+  ('dennys', 'https://dennysgaragessf.com', 'https://dennysgaragessf.com/**',
+   'smtp.example.com', 587, 'office@dennysgaragessf.com', 'app-password',
+   'Denny''s Garage <office@dennysgaragessf.com>')
+on conflict (slug) do update set
+  site_url      = excluded.site_url,
+  redirect_urls = excluded.redirect_urls,
+  smtp_host     = excluded.smtp_host,
+  smtp_port     = excluded.smtp_port,
+  smtp_user     = excluded.smtp_user,
+  smtp_pass     = excluded.smtp_pass,
+  smtp_from     = excluded.smtp_from;
+```
+
+Registry rows are cached for `GOTRUE_MULTITENANT_CACHE_TTL` (default `5m`);
+an edit takes effect within that window — the `updated_at` trigger also
+rebuilds the tenant's cached mailer and config — or immediately after a
+restart.
+
+**`_control._tenants` columns**
+
+| Column | Required | Notes |
+|---|---|---|
+| `slug` | yes | the tenant ID (primary key) |
+| `site_url` | yes | site base URL; also the default `jwt_issuer` |
+| `schema_name` | auto | defaults to `<slug>_auth` |
+| `jwt_secret` | auto | 256-bit key the trigger generates; rotate it to sign every user of that tenant out |
+| `jwt_issuer` | auto | defaults to `site_url` |
+| `redirect_urls` | no | comma-separated post-auth redirect allowlist; globs allowed (e.g. `https://site.com/**`) |
+| `smtp_host` / `_port` / `_user` / `_pass` / `_from` | no | per-tenant sender. `smtp_from` may be `Name <addr>`. Left empty ⇒ the stack's global mailer (a no-op if that is unset) |
+| `created_at` / `updated_at` | auto | an `updated_at` bump invalidates the cached row |
+
+---
+
 ## Table of Contents
 
+- [Multi-tenant fork](#multi-tenant-fork)
 - [Quick Start](#quick-start)
 - [Running in Production](#running-in-production)
 - [Configuration](#configuration)

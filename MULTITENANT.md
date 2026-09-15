@@ -62,6 +62,11 @@ stripped), validated against `^[a-z][a-z0-9_-]{2,30}$`, then looked up in
 never consulted. Unknown or malformed subdomains get a 404 before any
 handler or DB access runs.
 
+The slug is the tenant ID: it also names the schema (`<slug>_auth`), the JWT
+kid (`tenant:<slug>`) and the hostname (`auth-<slug>.<domain>`). See
+**[Tenant IDs](./README.md#tenant-ids)** for the derivation table, the
+`_control._tenants` columns and a copy-paste registration insert.
+
 ## What changed vs upstream
 
 | Path | Change |
