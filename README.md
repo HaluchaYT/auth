@@ -99,6 +99,15 @@ restart.
 | `smtp_host` / `_port` / `_user` / `_pass` / `_from` | no | per-tenant sender. `smtp_from` may be `Name <addr>`. Left empty ⇒ the stack's global mailer (a no-op if that is unset) |
 | `created_at` / `updated_at` | auto | an `updated_at` bump invalidates the cached row |
 
+### Data schema + API exposure, automatic (`db/migrations/002_tenant_data_schema.sql`)
+
+Run `002_tenant_data_schema.sql` **once** in Supabase Studio (it needs the Studio superuser). From then on, inserting a tenant row also:
+
+1. creates the site's data schema (`<slug>` with `-` → `_`) and grants it to `service_role` only;
+2. adds it to PostgREST's in-database schema list (`alter role authenticator set pgrst.db_schemas = ...`) and sends `NOTIFY pgrst, 'reload config'` + `'reload schema'`, so it is served immediately, with no Coolify edit and no restart.
+
+Deleting the row removes the schema from the API list but keeps the data. The in-database setting overrides `PGRST_DB_SCHEMAS` (PostgREST precedence: file < env < in-database), so the Coolify variable is only a fallback now. The install backfills every tenant already registered and prints the resulting list; check it still contains everything your stack exposed before. Sites that need browser (anon/authenticated) access add those grants in their own schema file.
+
 ---
 
 ## Table of Contents
